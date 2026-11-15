@@ -1,72 +1,59 @@
 # 走查测试
 
-同一车辆两个时段的智能底盘日志走查与对比服务。通过 CC Connect 接收飞书请求，获取日志并调用 Windows 原生分析器，交付一份主报告和 Base/PCM 更新各一份七子表明细。
+[实习项目总览](https://github.com/Inner-vic/internship-projects) · [使用与验证](docs/project-guide.md)
 
-项目提供完整业务适配源码、模板、测试和独立调度工具。实际服务需要 **Windows x64、CPython 3.11**、获准车云来源及飞书接入；新候选环境默认关闭业务执行。
+对同车两个时窗进行完整规则走查，交付主报告和两份原生明细表。
 
-## 使用方式
+## 解决的问题
 
-在已部署的入口发送自然语言请求。以下 VIN 为合成示例：
+两个时窗的走查比较，不只是把两次统计摆在一起：角色、规则版本、日志来源和模板口径都必须一致，才能解释差异。原生表格和主报告还需要保持同一任务身份与可读的来源关系。
 
-```text
-走查测试 DEM0VEH1CLE000001
-Base：2026-11-03 13:10 至 13:17
-PCM 更新：2026-11-03 09:53 至 10:10
-```
+项目将双窗输入、完整规则、原生分析器和飞书资产交付组织成可恢复的分析流程。
 
-- 显式角色优先；没有角色时按输入顺序解释，不按时间先后重排。
-- 未标注时区时按北京时间处理；无法确定日期时先补齐。
-- 两个时窗分别获取同窗一致来源的数据，冻结同一份完整规则快照后统计。
-- 主报告链接到两份实际明细；缺失或未解析项在报告中保留说明。
+## 实现了什么
 
-接入层需传入同一请求的真实身份、消息和接收时间。任务按来源去重与恢复，完成状态要求报告资产治理和原消息送达凭据。
-
-## 获取源码与校验
-
-```powershell
-git clone https://github.com/Inner-vic/walkthrough-test.git
-cd walkthrough-test
-python -B -X utf8 tools/check_repository.py
-```
-
-上述检查不取日志、不启动任务。完整分析器源码已入库，运行依赖和原生工具在部署时另行准备。
-
-## 新环境部署
-
-1. 按[依赖清单](docs/dependencies.md)准备 Windows CPython 3.11 x64、飞书 CLI、Git 原生工具及分析器依赖。
-2. 在该平台按[散列锁定清单](workspace/runtime/wtr096-hardening/skill/requirements-windows-native.lock)下载 wheel，然后生成全新候选工作区。
-
-   ```powershell
-   # 以下均为示例路径，先替换为自己的解释器、wheel 目录和新工作区。
-   & "C:/Path/To/Python311/python.exe" -I -m pip download --only-binary=:all: --require-hashes -r workspace/runtime/wtr096-hardening/skill/requirements-windows-native.lock -d "D:/packages/walkthrough-py311"
-   & "C:/Path/To/Python311/python.exe" -B -X utf8 tools/prepare_workspace.py --workspace "D:/workspaces/walkthrough" --base-python "C:/Path/To/Python311/python.exe" --wheelhouse "D:/packages/walkthrough-py311"
-   ```
-
-3. 按[配置说明](docs/configuration.md)填写候选私有配置，核对 User/Bot 身份、规则、模板与可信查询来源。
-4. 按[部署说明](docs/deployment.md)配置独立调度、预检和规则核验，完成授权首单验收后启用。
-
-准备工具会创建 venv 并安装锁定依赖，但不会授权、启动任务或覆盖已有部署。已有服务升级使用版本目录，保留原任务与回执。
-
-## 源码结构
-
-| 路径 | 内容 |
+| 能力 | 实现结果 |
 | --- | --- |
-| `workspace/.agents/skills/` | 走查 Skill 入口、公共路由及时间解析 |
-| `workspace/runtime/wtr096-hardening/skill/` | 当前版本业务适配、模板和测试 |
-| `workspace/runtime/approved-full-analyzer/` | 原生完整分析器源码 |
-| `workspace/deployment/` | 宿主、调度与授权维护 |
-| `tools/`、`examples/`、`docs/` | 部署工具、配置样例和维护说明 |
+| 双窗规范化 | 同 VIN 的 Base/PCM 更新角色、完整时间与时区校验 |
+| 来源与规则准备 | 每窗独立取数，双窗共享同一份冻结的完整规则快照 |
+| 原生分析协作 | 下载检查点、双窗阶段管理，以及 AD、PCM、CPU 分析的受控重叠 |
+| 原生报告交付 | 一份主报告、两份七子表明细，写入回读后完成权限和来源治理 |
 
-这里的 `runtime/` 收录版本化源码，不包含业务运行数据。共享解析模块也不代表已部署日志分析或时延分析服务。
+## 实现架构
 
-## 验证与维护
+![走查测试的主要模块、执行顺序和关键边界](https://raw.githubusercontent.com/Inner-vic/internship-projects/main/assets/architecture/walkthrough-test.svg)
 
-完整离线测试入口为 `tools/run_tests.py`，须由准备后的 CPython 3.11 独立解释器运行。GitHub 的 [Source checks](.github/workflows/source-checks.yml) 检查源码和提交清单；离线、环境跳过项与真实服务验收分别记录。
+## 关键工程设计
 
-- [架构与数据流](docs/architecture.md)
-- [运维、状态与失败恢复](docs/operations.md)
-- [测试与验收说明](docs/validation.md)
-- [飞书接入](docs/lark-asgard-integration.md)
-- [版本变更](CHANGELOG.md)与[公开副本的验证范围](PUBLICATION.md)
+### 1. 固定比较口径，再进入并行执行
 
-本仓库对应“走查测试”入口，“走查测试New”仍停用。凭据、真实日志、用户会话、任务记录和业务报告不随源码分发。
+显式 Base/PCM 更新角色优先，不根据时间先后重排。完整规则每任务读取一次并冻结；两窗可以分别选取可用环境，同窗的各类来源保持一致。查询异常不会被当成“成功但没有数据”。
+
+### 2. 并行度服从资源预算
+
+下载、原生解析、重型任务和发布分别约束并行边界。`window_pipeline` 组织两窗及各分析阶段，让可重叠的工作重叠，同时避免无界扩张下载池或解析进程。
+
+### 3. 把原生报告当作需要核验的资产
+
+明细表按模板绑定、逐格写入并完整回读，主报告链接到实际明细。三份资产各自完成权限、所有权和来源绑定后再交付，缺失和未解析项保留在报告中。
+
+## 实现与验证范围
+
+源码包含业务适配、完整分析器、原生模板契约及独立调度工具。离线回归、Windows 进程行为和真实交付分别验收，依据见[验证文档](docs/validation.md)及[公开验证说明](https://github.com/Inner-vic/walkthrough-test/blob/main/PUBLICATION.md)。
+
+这份公开副本展示“走查测试”的实现。真实日志、业务报告和用户身份数据不在仓库中。
+
+## 源码导读
+
+| 源码 | 关注的实现 |
+| --- | --- |
+| [workspace/runtime/wtr096-hardening/skill/scripts/native_lifecycle.py](workspace/runtime/wtr096-hardening/skill/scripts/native_lifecycle.py) | 持久任务生命周期 |
+| [workspace/runtime/wtr096-hardening/skill/scripts/window_pipeline.py](workspace/runtime/wtr096-hardening/skill/scripts/window_pipeline.py) | 双窗与阶段协作 |
+| [workspace/runtime/wtr096-hardening/skill/scripts/native_sheet_delivery.py](workspace/runtime/wtr096-hardening/skill/scripts/native_sheet_delivery.py) | 原生表格写入与回读 |
+| [workspace/runtime/wtr096-hardening/skill/scripts/report_policy.py](workspace/runtime/wtr096-hardening/skill/scripts/report_policy.py) | 报告权限及交付规则 |
+
+## 项目资料
+
+使用步骤、依赖和本地验证见[使用与验证](docs/project-guide.md)；源码来源与验证范围见[发布说明](https://github.com/Inner-vic/walkthrough-test/blob/main/PUBLICATION.md)。本页用于介绍实习阶段的实现与设计，具体结论以所链接的代码和证据为准。
+
+[日志分析](https://github.com/Inner-vic/uroad-log-analyzer)与[时延分析](https://github.com/Inner-vic/ad-p99-analysis)使用相关的来源/时间解析思想，但业务执行和数据分别管理。
