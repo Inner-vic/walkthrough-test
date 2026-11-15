@@ -1,0 +1,6 @@
+# CPython 3.11 host only; native analysis additionally needs the selected Windows or Linux/WSL dependency lock and approved analyzer/tools. See WINDOWS-NATIVE.md.
+numpy==1.24.4
+pandas==2.0.3
+zstandard==0.25.0
+tzdata==2026.4
+openpyxl==3.1.5

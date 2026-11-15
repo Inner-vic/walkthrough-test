@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "active_mode": "project_home",
+  "project_id": "target-project",
+  "workspace_root": "REPLACE_WORKSPACE",
+  "settings_path": "REPLACE_SETTINGS",
+  "lark_home": "REPLACE_PROJECT_HOME",
+  "lark_cli": "REPLACE_CLI",
+  "auth_credential_replica_path": "REPLACE_CREDENTIAL_REPLICA",
+  "python_executable": "REPLACE_PYTHON",
+  "expected_cli_version": "REPLACE_ACTUAL_COMPATIBLE_CLI_VERSION",
+  "profiles": {
+    "dispatch_user": "target-project-user",
+    "report_bot": "target-project-report-bot"
+  },
+  "expected_lark_app_id": "cli_REPLACE_APP",
+  "expected_dispatch_open_id": "ou_REPLACE_USER",
+  "required_user_scopes": [
+    "offline_access",
+    "docs:secure_label:readonly",
+    "docs:secure_label:write_only"
+  ],
+  "auth_maintenance": {
+    "check_interval_minutes": 60,
+    "access_refresh_margin_seconds": 900,
+    "refresh_warning_seconds": 604800,
+    "auth_verify_attempts": 2,
+    "retry_delay_seconds": 1,
+    "lock_timeout_seconds": 10,
+    "notifications": {
+      "enabled": false
+    }
+  }
+}

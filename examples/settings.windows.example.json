@@ -1,0 +1,61 @@
+{
+  "workspace_root": "REPLACE_WORKSPACE",
+  "runtime_state_dir": "REPLACE_WORKSPACE/data/walkthrough-test-windows081/runtime",
+  "cloud_settings_path": "REPLACE_CLOUD_SETTINGS",
+  "execution_release": "walkthrough-target16-hardening",
+  "lark_cli": "REPLACE_CLI",
+  "lark_home": "REPLACE_PROJECT_HOME",
+  "project_id": "target-project",
+  "lark_profile": "target-project-user",
+  "report_lark_profile": "target-project-report-bot",
+  "expected_lark_app_id": "cli_REPLACE_APP",
+  "expected_operator_open_id": "ou_REPLACE_USER",
+  "expected_dispatch_open_id": "ou_REPLACE_USER",
+  "project_isolation_required": true,
+  "auth_credential_replica_path": "REPLACE_CREDENTIAL_REPLICA",
+  "auth_expected_cli_version": "REPLACE_ACTUAL_COMPATIBLE_CLI_VERSION",
+  "report_parent_position": "my_library",
+  "report_secure_label_name": "L3",
+  "product_version": {
+    "query_chat_id": "oc_REPLACE_GROUP",
+    "asgard_bot_id": "ou_REPLACE_ASGARD",
+    "asgard_app_id": "cli_REPLACE_ASGARD_APP",
+    "timeout_seconds": 120,
+    "poll_interval_seconds": 2
+  },
+  "local_analysis": {
+    "backend": "native_full",
+    "execution": "windows",
+    "environment": "prod_then_test",
+    "python": "REPLACE_PYTHON",
+    "analyzer_root": "REPLACE_ANALYZER",
+    "windows_git_bin": "REPLACE_GIT_USR_BIN",
+    "rules_spreadsheet_token": "REPLACE_APPROVED_RULES",
+    "timeout_seconds": 7200,
+    "window_workers": 2,
+    "download_workers": 4,
+    "keep_raw_logs": false
+  },
+  "cloud_environment": {
+    "WALKTHROUGH_PROD_ORIGIN": "REPLACE_APPROVED_VALUE",
+    "WALKTHROUGH_PROD_DOWNLOAD_HTTPS_HOSTS": "REPLACE_APPROVED_VALUE",
+    "WALKTHROUGH_PROD_DOWNLOAD_HTTP_HOSTS": "REPLACE_APPROVED_VALUE",
+    "WALKTHROUGH_TEST_ORIGIN": "REPLACE_APPROVED_VALUE",
+    "WALKTHROUGH_TEST_DOWNLOAD_HTTPS_HOSTS": "REPLACE_APPROVED_VALUE",
+    "WALKTHROUGH_TEST_DOWNLOAD_HTTP_HOSTS": "REPLACE_APPROVED_VALUE"
+  },
+  "report_delivery": {
+    "format": "native_sheets",
+    "include_images": false,
+    "native_template_reference_reader": "fixed_user",
+    "native_template_spreadsheet_token": "REPLACE_RELAY_TOKEN",
+    "native_template_bridge_manifest": "REPLACE_TARGET_READY_PATH"
+  },
+  "native_sheet_revision_guard": true,
+  "execution_policy": {
+    "version": "walkthrough-lifecycle-v1",
+    "heavy_jobs": 1,
+    "publication_workers": 2,
+    "parallel_window_discovery": true
+  }
+}

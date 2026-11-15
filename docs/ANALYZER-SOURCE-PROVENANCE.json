@@ -1,0 +1,47 @@
+{
+  "schema": "walkthrough-analyzer-distribution-v1",
+  "source_files": 13,
+  "production_validator_sha256": "2c83f7f2ae1408835ed7af8e8591c1c5f2125e50ebf027c1351e9d1a9b1c37c9",
+  "upstream_source_sha256": {
+    "common/common_wrapper.py": "28ce026262d928de8deee2061ca64b38b64d3172e275892804b94054e7cca68e",
+    "common/feishu_client.py": "c14211fa2d99769daf81b7409f5d719ba7d197b0c8e6db7f6d94af03649a067c",
+    "common/perf_csv.py": "e3c6b9eb8cfa22d74c46236d7b7f4a0a6bd6b909f1323c3f4d0405e99deae374",
+    "common/perf_log.py": "30ed3af1823555e3d2f1fedbe771a650d3b861dd481a9f2ec5c0dd2eec2aff05",
+    "common/perf_path.py": "bee959fa1a7b4d6b0c96f5c04284ea671f869664ed59958a74aac606ba507b8b",
+    "common/perf_plot.py": "080f38055c559545e28eb7b4fd572a5fbf5eee0ff69a89e0699d5df6d58cef4d",
+    "common/perf_utils.py": "48d3c3eb6d1ea68e994c0c4cfad7bfbb95a3d2de8b7b6b91ca9d63f235e875b3",
+    "common/perf_value.py": "1b3b3e156ee61b8705b949a99f0ad5b4c523d21a86925a6767c82a7c73b8ce24",
+    "common/secrets_manager.py": "34e22979c315dcd486d15f48e51dfa52a4143d831f4229f914a85dbad7c3101d",
+    "general_performance/config.py": "b1b45be9b191be017bf08ba6ace61d2d4fb1b59bfdf0a16927014dd904e2bbdb",
+    "general_performance/o.ini": "d037b6b16f55c1db432e2d7469349129e9bb5a81b2f0beec77205ed2c1129cdf",
+    "general_performance/performance.py": "704e5efbd509fd359736635d61388e765f60c4e976aefb4a90a3cc1d678c0258",
+    "general_performance/start.py": "ec20832618cd4a997c45405e6987b193ca984791525ad72e3dcb6c68d4445242"
+  },
+  "sanitized_modules": {
+    "common/feishu_client.py": {
+      "replaced_literals": 5,
+      "reason": "remove historical credential/resource defaults; operational rules/templates come from private settings and frozen snapshots"
+    },
+    "common/perf_path.py": {
+      "replaced_literals": 1,
+      "reason": "remove historical credential/resource defaults; operational rules/templates come from private settings and frozen snapshots"
+    },
+    "common/perf_plot.py": {
+      "replaced_literals": 3,
+      "reason": "remove historical credential/resource defaults; operational rules/templates come from private settings and frozen snapshots"
+    },
+    "general_performance/config.py": {
+      "replaced_literals": 8,
+      "reason": "remove historical credential/resource defaults; operational rules/templates come from private settings and frozen snapshots"
+    }
+  },
+  "sanitized_ast_sha256": {
+    "common/feishu_client.py": "f9bb523305cc76cae5fd25ecb88261b72f2de4db0837e259510b66b4d68ef6df",
+    "common/perf_path.py": "8669a22dc66bcd5523ce0c27b0c8f2c26b44b0df2e68956a938c26ba7e8beb1a",
+    "common/perf_plot.py": "1761cbe23dd0857b9a088c984ce2a30fcb50bdc668dd6e41345ff6d651f4ad48",
+    "general_performance/config.py": "5f0828460e686a919cf24ac2192ed72f83d73c01be132e928e1865fcaba865a5"
+  },
+  "sanitized_slim_config_ast_sha256": "01b98aca158f7125be2ba12a5c3353e8df7684cef86bc324d2016027c10cc4c8",
+  "credentials_or_tenant_resource_defaults_included": false,
+  "business_metric_code_changed": false
+}

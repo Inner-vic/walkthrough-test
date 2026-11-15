@@ -1,0 +1,70 @@
+{
+  "schema": "walkthrough-export-validation-v1",
+  "version": "0.8.1-windows-integration-target.16",
+  "validated_at": "2026-11-04",
+  "platform": "Windows x64 / CPython 3.11.15",
+  "offline_full_suite": {
+    "status": "passed",
+    "tests": 1113,
+    "passed": 1108,
+    "skipped": 5,
+    "failures": 0,
+    "errors": 0,
+    "groups": {
+      "input": 38,
+      "repository": 8,
+      "routing": 4,
+      "walkthrough": 1063
+    }
+  },
+  "portable_suite": {
+    "status": "passed",
+    "tests": 62,
+    "failures": 0,
+    "errors": 0
+  },
+  "relocated_candidate": {
+    "status": "passed",
+    "same_physical_host": true,
+    "fresh_venv": true,
+    "locked_packages_installed": 24,
+    "pip_check": "passed",
+    "execution_enabled": false,
+    "authorization_started": false,
+    "business_jobs_created": 0,
+    "standalone_auth_policy": "passed",
+    "public_route": "passed",
+    "beijing_hyphen_and_role_order": "passed",
+    "offline_zip_crc_selfcheck": "passed"
+  },
+  "repository_checks": {
+    "source_integrity": "passed",
+    "private_data_scan": "passed",
+    "python_syntax": "passed",
+    "powershell_syntax": "passed",
+    "local_markdown_links": "passed"
+  },
+  "active_deployment_unchanged": {
+    "status": "verified",
+    "source_files": 167
+  },
+  "new_environment_online_end_to_end_verified": false,
+  "native_revision_observation": {
+    "scope": "read-only duplicate snapshot stage; not whole-job latency",
+    "full_snapshot_calls": 17,
+    "full_snapshot_seconds": 20.831,
+    "unchanged_revision_calls": 1,
+    "unchanged_revision_seconds": 1.292,
+    "independent_full_reread_calls": 17,
+    "independent_full_reread_seconds": 21.062,
+    "content_style_layout_equal": true
+  },
+  "archive_completeness_update": {
+    "date": "2026-11-04",
+    "analyzer_source_files": 13,
+    "sanitized_modules": 4,
+    "removed_private_default_literals": 17,
+    "fixed_distribution_ast_contract": true,
+    "live_business_jobs_created": 0
+  }
+}

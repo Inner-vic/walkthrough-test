@@ -1,0 +1,25 @@
+{
+  "git": {
+    "source_url": "https://github.com/git-for-windows/git/releases/download/v2.52.0.windows.1/Git-2.52.0-64-bit.tar.bz2",
+    "release_page": "https://github.com/git-for-windows/git/releases/tag/v2.52.0.windows.1",
+    "sha256": "4c05716ec90806b29d6392e6190e2277a6687688f889f0039d7ae3ca53ed433f",
+    "bytes": 117410695,
+    "archive_bundled": false,
+    "prepared_subtree": "usr",
+    "expected_gawk_version": "5.3.2",
+    "expected_grep_version": "3.0",
+    "installer_executed": false,
+    "system_git_modified": false
+  },
+  "python": "Approved CPython 3.11 x64; base runtime not included",
+  "full_analyzer": {
+    "included": true,
+    "required": true,
+    "contract_id": "m100-asgard-attachment-20261024-v1",
+    "contract_modules": 12,
+    "unknown_source_rejected": true,
+    "source_directory": "workspace/runtime/approved-full-analyzer",
+    "sanitized_private_defaults": true
+  },
+  "lark_cli_ccconnect_identity_rules_templates": "Target authorized preparation required; not included"
+}

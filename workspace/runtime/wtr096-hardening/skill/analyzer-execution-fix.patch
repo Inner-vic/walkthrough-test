@@ -1,0 +1,1604 @@
+--- a/scripts/feishu_report.py
++++ b/scripts/feishu_report.py
+@@ -11,15 +11,16 @@
+ from pathlib import Path
+ 
+ from request_model import InputError
++from report_attachments import artifact_filename
+ 
+ 
+ METRICS = (
+-    ("p99_infer_delay_ms", "AD P99 Infer Delay"),
+-    ("frame_rate_hz", "AD Frame Rate"),
+-    ("system_cpu_percent", "Sys CPU Usage"),
+-    ("pcm_p99_infer_delay_ms", "PCM P99 Infer Delay"),
+-    ("pcm_frame_rate_hz", "PCM Frame Rate"),
+-    ("pcm_cpu_percent", "PCM CPU Usage"),
++    ("p99_infer_delay_ms", "AD P99 Infer Delay (ms)"),
++    ("frame_rate_hz", "AD Frame Rate (Hz)"),
++    ("system_cpu_percent", "Sys CPU Usage (%)"),
++    ("pcm_p99_infer_delay_ms", "PCM P99 Infer Delay (ms)"),
++    ("pcm_frame_rate_hz", "PCM Frame Rate (Hz)"),
++    ("pcm_cpu_percent", "PCM CPU Usage (%)"),
+ )
+ SCENARIOS = ("slow_driver", "fast_driver", "parking", "CNOA")
+ 
+@@ -162,7 +163,8 @@
+             evidence.append('<p>'+selection_note+'</p>')
+         workbook = result.get('full_workbooks',{}).get(role,{})
+         if workbook:
+-            evidence.append('<p>完整明细附件：'+escape(str(Path(workbook['path']).name))+
++            card_name = artifact_filename(role, workbook.get('request_sha256'), workbook.get('sha256'))
++            evidence.append('<p>完整明细附件：'+escape(card_name)+
+                             '；SHA256：'+escape(str(workbook.get('sha256','')))+'。附件卡片位于报告末尾。</p>')
+         missing = source.get('missing_log_classes',[])
+         quality = source.get('source_quality',{})
+@@ -189,7 +191,7 @@
+         '<colgroup><col width="100"/><col span="12" width="115"/></colgroup>',
+         "<thead><tr>", "".join(first_header), "</tr><tr>", "".join(second_header), "</tr></thead>",
+         "<tbody>", "".join(body), "</tbody></table>",
+-        "<p>Δ = PCM更新 − base；绿色表示改善，红色表示退化；时延和 CPU 占用越低越好，帧率越高越好；0 表示无变化。</p>",
++        "<p>Δ = PCM更新 − base；时延及其差值单位为 ms，帧率及其差值单位为 Hz，CPU 占用单位为 %、差值单位为百分点。绿色表示改善，红色表示退化；时延和 CPU 占用越低越好，帧率越高越好；0 表示无变化。</p>",
+         '<p><b>数据来源：</b>',
+         "AD P99/AD Frame Rate 来自车云原始 fsdA/fsdB 日志经本地原分析器统计；PCM P99/PCM Frame Rate 与 CPU 来自同环境 log_fsdA_service。两种帧率独立取数。详情见来源与覆盖记录。</p>",
+         '<p>本报告附 Base 与 PCM更新两份完整 Excel 快照，包含完整原生统计、规则审计及缺失说明。</p>',
+--- a/scripts/full_workbook.py
++++ b/scripts/full_workbook.py
+@@ -196,6 +196,9 @@
+     quality_note = record.get("source_quality_diagnostic")
+     if quality_note:
+         diagnostic = str(diagnostic or '') + ('；' if diagnostic else '') + str(quality_note)
++    input_note = record.get('input_diagnostic')
++    if isinstance(input_note, dict) and input_note.get('message'):
++        diagnostic = str(diagnostic or '') + ('；' if diagnostic else '') + str(input_note['message'])
+     if status == "conditional_skip":
+         return ("conditional_skip", "原生解析明确条件跳过",
+                 str(record.get("skip_reason") or diagnostic or "原生记录标明 conditional_skip，未提供详细条件原因。"))
+--- a/scripts/m100_attachment_worker.py
++++ b/scripts/m100_attachment_worker.py
+@@ -21,7 +21,7 @@
+ from urllib.parse import urlsplit
+ 
+ SCENARIOS=(('slow_driver','低速人驾','0'),('fast_driver','高速人驾','4'),('CNOA','CNOA','5'),('parking','泊车','1'))
+-ANALYSIS_PROFILE='m100-full-native-audited-v5'
++ANALYSIS_PROFILE='m100-full-native-audited-v7'
+ TARGET_METRICS=frozenset(('header_delay','vla_parking_header_delay','vlamodel_fps','vlaparkingdlm_fps'))
+ 
+ 
+@@ -320,7 +320,11 @@
+     contract=validate_analyzer_contract(args.source_root)
+     sys.path[:0]=[str(args.source_root/'general_performance'),str(args.source_root)]
+     import config
+-    from common import perf_plot,perf_value,feishu_client,perf_csv
++    from common import perf_plot,perf_value,feishu_client,perf_csv,perf_utils
++    from native_execution_compat import install_execution_compat, finalize_execution_compat
++    execution_trace=args.output.parent/'execution-compat-trace'
++    execution_compat=install_execution_compat(perf_utils,perf_csv,
++        trace_dir=execution_trace,request_time_range=args.time_range)
+     from native_selection import POLICY, install_source_boundary_patch, validate_selection_audit
+     selection=json.loads(args.selection_manifest.read_text(encoding='utf-8'))
+     if selection.get('policy')!=POLICY:
+@@ -349,6 +353,8 @@
+     sys.argv=['start.py',str(args.log_dir),args.time_range,'m100-ultra']
+     runpy.run_path(str(args.source_root/'general_performance/start.py'),run_name='__main__')
+     runtime_execution=runtime.finalize()
++    execution_compat_runtime=finalize_execution_compat(execution_trace,
++        request_time_range=args.time_range)
+     if not captured:
+         raise ValueError('原分析器未调用完整统计汇总边界；拒绝空报告。')
+     ini=configparser.ConfigParser()
+@@ -363,6 +369,10 @@
+     exported['source_selection']=selection_audit
+     exported['runtime_execution']=runtime_execution
+     exported['analyzer_contract']=contract
++    exported['execution_compat']=execution_compat
++    exported['execution_compat_runtime']=execution_compat_runtime
++    from native_metric_diagnostics import attach_metric_input_diagnostics
++    exported=attach_metric_input_diagnostics(exported)
+     args.output.with_name('report-data.json').write_text(
+         json.dumps(exported,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
+     args.output.with_name('source-selection-audit.json').write_text(
+--- /dev/null
++++ b/scripts/native_execution_compat.py
+@@ -0,0 +1,429 @@
++"""Portable conversion for the approved analyzer's brake configuration bytes.
++
++The external source stays unchanged. Only a process-local wrapper around its
++approved AWK builder is installed. The existing brake bit tests and malformed
++input coercion are retained; clean hexadecimal tokens no longer depend on an
++AWK implementation's optional conversion of dynamic ``0x`` strings.
++"""
++from __future__ import annotations
++
++import ast
++import configparser
++import concurrent.futures
++from datetime import datetime, timezone, timedelta
++import functools
++import hashlib
++import inspect
++import json
++import os
++from pathlib import Path
++import re
++import secrets
++import stat
++import textwrap
++import threading
++
++from analyzer_contract import ast_digest, validate_analyzer_contract, validate_contract_audit
++
++POLICY = 'portable-brake-hex-spawn-v2'
++BUILDER_AST_SHA256 = '4faac54b8db890f32c8ef1fc68e25d8bce087cb532dcbad6c920a6741fdb6894'
++_MARKER = '_walkthrough_portable_brake_hex_spawn_v2'
++_HELPER_NAME = '_walkthrough_hex_decimal_v1'
++_CHILD = None
++
++ORIGINAL_CLASSIFIER = '''        function classify_brake(b7, b10,   n1, n2, b1, b2, bit3_1, bit2_0){
++            n1 = "0x" b7; n2 = "0x" b10
++            b1 = n1+0; b2 = n2+0
++            bit3_1 = int(b1/2) % 8
++            bit2_0 = b2 % 8
++            if (bit3_1 == 1 && bit2_0 == 0) return "自研EMB"
++            if (bit3_1 == 1 && bit2_0 == 1) return "博世EMB"
++            return "其他制动"
++        }
++'''
++
++PATCHED_CLASSIFIER = '''        function _walkthrough_hex_decimal_v1(s,   i, n, digit){
++            s = tolower(s)
++            n = 0
++            for (i = 1; i <= length(s); i++) {
++                digit = index("0123456789abcdef", substr(s, i, 1)) - 1
++                n = n * 16 + digit
++            }
++            return n
++        }
++        function classify_brake(b7, b10,   n1, n2, b1, b2, bit3_1, bit2_0){
++            n1 = "0x" b7; n2 = "0x" b10
++            b1 = n1+0; b2 = n2+0
++            if (b7 ~ /^[0-9A-Fa-f]+$/ && b10 ~ /^[0-9A-Fa-f]+$/) {
++                b1 = _walkthrough_hex_decimal_v1(b7)
++                b2 = _walkthrough_hex_decimal_v1(b10)
++            }
++            bit3_1 = int(b1/2) % 8
++            bit2_0 = b2 % 8
++            if (bit3_1 == 1 && bit2_0 == 0) return "自研EMB"
++            if (bit3_1 == 1 && bit2_0 == 1) return "博世EMB"
++            return "其他制动"
++        }
++'''
++
++
++def _sha(text):
++    return hashlib.sha256(text.encode('utf-8')).hexdigest()
++
++
++def expected_execution_compat_audit():
++    """Return the fixed, independently verifiable algorithm identity."""
++    algorithm = {
++        'policy': POLICY,
++        'builder_ast_sha256': BUILDER_AST_SHA256,
++        'original_classifier_sha256': _sha(ORIGINAL_CLASSIFIER),
++        'patched_classifier_sha256': _sha(PATCHED_CLASSIFIER),
++        'clean_hex_only': True,
++        'malformed_coercion_preserved': True,
++        'brake_bit_tests_preserved': True,
++        'external_source_modified': False,
++        'spawn_initializer_required': True,
++        'actual_mawk_consumption_required': True,
++        'module_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
++    }
++    algorithm['algorithm_fingerprint'] = _sha(json.dumps(
++        algorithm, sort_keys=True, ensure_ascii=False, separators=(',', ':')))
++    return algorithm
++
++
++def validate_execution_compat_audit(audit):
++    """Validate identity only; unsigned receipts are not runtime attestation."""
++    expected = expected_execution_compat_audit()
++    if not isinstance(audit, dict) or set(audit) != set(expected):
++        raise ValueError('原生十六进制兼容审计缺失或字段不完整。')
++    if any(type(audit[key]) is not type(value) or audit[key] != value
++           for key, value in expected.items()):
++        raise ValueError('原生十六进制兼容策略、算法摘要或原函数契约不一致。')
++    return dict(audit)
++
++
++def patch_awk_program(program):
++    """Replace exactly one approved classifier, leaving all other bytes intact."""
++    if (not isinstance(program, str)
++            or program.count(ORIGINAL_CLASSIFIER) != 1
++            or program.count('function classify_brake(') != 1
++            or _HELPER_NAME in program):
++        raise ValueError('原生 AWK 制动分类结构已变化，拒绝猜测或重复安装兼容逻辑。')
++    return program.replace(ORIGINAL_CLASSIFIER, PATCHED_CLASSIFIER, 1)
++
++
++def _approved_builder(perf_utils):
++    original = getattr(perf_utils, '_build_awk_program', None)
++    if not inspect.isfunction(original) or getattr(original, _MARKER, False):
++        raise ValueError('原生 AWK 生成器缺失或已安装兼容逻辑。')
++    try:
++        tree = ast.parse(textwrap.dedent(inspect.getsource(original)))
++    except (OSError, TypeError, SyntaxError, ValueError):
++        raise ValueError('无法核验原生 AWK 生成器源码。') from None
++    if (len(tree.body) != 1 or not isinstance(tree.body[0], ast.FunctionDef)
++            or tree.body[0].name != '_build_awk_program'
++            or ast_digest(tree) != BUILDER_AST_SHA256):
++        raise ValueError('原生 AWK 生成器完整 AST 已变化，须先适配和真实回归。')
++    # This has no parser, subprocess, file or network side effects in the
++    # approved builder. It proves the generated fragment before installation.
++    patch_awk_program(original('', 2026))
++
++    return original
++
++
++def _json_bytes(value):
++    return (json.dumps(value,ensure_ascii=False,sort_keys=True,indent=2,allow_nan=False)+'\n').encode('utf-8')
++
++
++def _object_sha(value):
++    return hashlib.sha256(_json_bytes(value)).hexdigest()
++
++
++def _plain(path, *, directory=False):
++    path=Path(path)
++    info=path.lstat()
++    if (path.is_symlink() or getattr(info,'st_file_attributes',0)&getattr(stat,'FILE_ATTRIBUTE_REPARSE_POINT',0x400)
++            or not (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))):
++        raise ValueError('兼容审计只接受普通文件和目录。')
++    return path
++
++
++def _write_record(path,value):
++    path=Path(path)
++    if path.exists():_plain(path)
++    temporary=path.with_suffix('.tmp')
++    with temporary.open('xb') as stream:stream.write(_json_bytes(value))
++    temporary.replace(path)
++
++
++def _read_record(path):
++    return json.loads(_plain(path).read_text(encoding='utf-8'))
++
++
++def _epochs(request):
++    if not isinstance(request,str) or not re.fullmatch(r'\d{14}/\d{14}',request):
++        raise ValueError('兼容审计时间窗无效。')
++    values=[datetime.strptime(x,'%Y%m%d%H%M%S').replace(tzinfo=timezone(timedelta(hours=8))).timestamp()
++            for x in request.split('/')]
++    if values[0]>=values[1]:raise ValueError('兼容审计时间窗顺序无效。')
++    return values
++
++
++def _observe_ini(session):
++    path=_plain(Path(session['source_root'])/'general_performance/o.ini')
++    raw=path.read_bytes()
++    cfg=configparser.ConfigParser();cfg.read_string(raw.decode('utf-8-sig'))
++    request=cfg.get('PARAMETER','time',fallback='').strip()
++    log_root=cfg.get('PARAMETER','logPath',fallback='').strip()
++    if request!=session['request_time_range'] or not log_root or Path(log_root).resolve()!=Path(session['expected_log_root']).resolve():
++        raise ValueError('实际AWK子进程INI时间窗或日志目录不符。')
++    return {'time_range':request,'log_root':str(Path(log_root).resolve()),
++            'sha256':hashlib.sha256(raw).hexdigest()}
++
++
++def _publish_child(state):
++    _write_record(state['path'],state['record'])
++
++
++def _child_error(state,kind):
++    state['record']['errors'].append(kind)
++    _publish_child(state)
++
++
++class _SubprocessProxy:
++    """Only this perf_utils module sees the proxy; subprocess is not changed."""
++    def __init__(self,original,state):self.original,self.state=original,state
++    def __getattr__(self,name):return getattr(self.original,name)
++    def run(self,*args,**kwargs):
++        command=args[0] if args else kwargs.get('args')
++        if not isinstance(command,(tuple,list)) or not command or str(command[0])!='mawk':
++            return self.original.run(*args,**kwargs)
++        state=self.state
++        try:
++            pending=[row for row in state['record']['calls'] if row['consumption'] is None]
++            if len(command)<3 or command[1]!='-f' or len(pending)!=1:
++                raise ValueError('实际mawk调用与唯一生成程序不对应。')
++            row=pending[0]
++            program=_plain(command[2])
++            raw=program.read_bytes();digest=hashlib.sha256(raw).hexdigest()
++            if digest!=row['generation']['patched_program_sha256']:
++                raise ValueError('实际mawk消费的程序不是已修改的程序。')
++            actual_ini=_observe_ini(state['session'])
++            if actual_ini!=state['record']['initial_ini']:
++                raise ValueError('AWK调用期间实际INI已变化。')
++            row['consumption']={'program_sha256':digest,'program_bytes':len(raw),
++                'input_path_count':len(command)-3,'input_paths_sha256':_object_sha(list(map(str,command[3:]))),
++                'actual_ini':actual_ini,'returncode':None,'program_after_sha256':None}
++            _publish_child(state)
++            result=self.original.run(*args,**kwargs)
++            after=hashlib.sha256(_plain(program).read_bytes()).hexdigest()
++            row['consumption'].update(returncode=result.returncode,program_after_sha256=after)
++            _publish_child(state)
++            if result.returncode or after!=digest:
++                _child_error(state,'actual_mawk_failed_or_program_changed')
++            return result
++        except BaseException as exc:
++            _child_error(state,'actual_mawk_consumption_'+type(exc).__name__)
++            raise
++
++
++def _initialize_spawn_compat(trace_dir,nonce):
++    """Top-level importable initializer used by the original spawn pool."""
++    global _CHILD
++    if _CHILD is not None:raise ValueError('子进程兼容初始化不能重复。')
++    trace=_plain(trace_dir,directory=True)
++    session=_read_record(trace/'session.json')
++    validate_execution_compat_audit(session['installation'])
++    if session['nonce']!=nonce or session['parent_pid']!=os.getppid():
++        raise ValueError('AWK子进程不属于本次父进程/nonce。')
++    from common import perf_utils
++    source=Path(perf_utils.__file__).resolve().parents[1]
++    if source!=Path(session['source_root']).resolve():raise ValueError('子进程导入了其它分析器。')
++    contract=validate_analyzer_contract(source)
++    if contract!=session['analyzer_contract']:raise ValueError('子进程实际源码契约不符。')
++    original=_approved_builder(perf_utils)
++    record={'schema_version':1,'policy':POLICY,'nonce':nonce,
++        'parent_pid':os.getppid(),'pid':os.getpid(),
++        'request_time_range':session['request_time_range'],
++        'analyzer_contract':contract,'initial_ini':_observe_ini(session),
++        'calls':[],'errors':[]}
++    path=trace/('worker-'+str(os.getpid())+'.json')
++    if path.exists():raise ValueError('兼容子进程审计文件已存在。')
++    state={'path':path,'record':record,'session':session}
++    _publish_child(state)
++    @functools.wraps(original)
++    def wrapped(context,nye):
++        try:
++            before=original(context,nye);after=patch_awk_program(before)
++            if before.replace(ORIGINAL_CLASSIFIER,'',1)!=after.replace(PATCHED_CLASSIFIER,'',1):
++                raise ValueError('制动分类以外的AWK内容变化。')
++            record['calls'].append({'generation':{
++                'original_program_sha256':_sha(before),'patched_program_sha256':_sha(after),
++                'context_sha256':_sha(context),'year':nye,'outside_classifier_bytes_unchanged':True},
++                'consumption':None})
++            _publish_child(state)
++            return after
++        except BaseException as exc:
++            _child_error(state,'program_generation_'+type(exc).__name__)
++            raise
++    setattr(wrapped,_MARKER,True)
++    perf_utils._build_awk_program=wrapped
++    perf_utils.subprocess=_SubprocessProxy(perf_utils.subprocess,state)
++    _CHILD=state
++
++
++def install_execution_compat(perf_utils,perf_csv=None,*,trace_dir=None,request_time_range=None):
++    """Guard original spawn construction and initialize actual parser children."""
++    _approved_builder(perf_utils)
++    epochs=_epochs(request_time_range)
++    if perf_csv is None or trace_dir is None:raise ValueError('必须提供原生进程池和独立运行审计目录。')
++    original_pool=getattr(perf_csv,'ProcessPoolExecutor',None)
++    if original_pool is not concurrent.futures.ProcessPoolExecutor:
++        raise ValueError('原生进程池边界已变化或已安装。')
++    if getattr(perf_csv,'txt_process_tool',None) is not getattr(perf_utils,'txt_process_tool',None):
++        raise ValueError('原始txt_process_tool提交边界已变化。')
++    source=Path(perf_utils.__file__).resolve().parents[1]
++    contract=validate_analyzer_contract(source)
++    trace=Path(trace_dir)
++    if trace.resolve().parent!=source.parent.resolve() or trace.name!='execution-compat-trace':
++        raise ValueError('兼容运行审计必须位于本次隔离任务目录。')
++    _plain(trace.parent,directory=True)
++    if trace.exists():raise ValueError('兼容运行审计目录必须为新建。')
++    trace.mkdir()
++    session={'schema_version':1,'policy':POLICY,'nonce':secrets.token_hex(16),
++        'parent_pid':os.getpid(),'request_time_range':request_time_range,'epoch_range':epochs,
++        'source_root':str(source),'expected_log_root':str(source.parent/'input/perf'),
++        'analyzer_contract':contract,'installation':expected_execution_compat_audit(),
++        'pools':[],'submissions':[],'errors':[]}
++    _write_record(trace/'session.json',session)
++    lock=threading.RLock()
++    signature=inspect.signature(original_pool)
++    def guarded_pool(*args,**kwargs):
++        bound=signature.bind_partial(*args,**kwargs);bound.apply_defaults()
++        values=bound.arguments
++        context=values.get('mp_context')
++        if context is None or context.get_start_method()!='spawn':
++            raise ValueError('原生进程池必须保留明确spawn上下文。')
++        if values.get('initializer') is not None or values.get('initargs') not in ((),None):
++            raise ValueError('原生进程池已有initializer，不能覆盖。')
++        requested=values.get('max_workers')
++        values['initializer']=_initialize_spawn_compat
++        values['initargs']=(str(trace.resolve()),session['nonce'])
++        executor=original_pool(*bound.args,**bound.kwargs)
++        with lock:
++            session['pools'].append({'start_method':executor._mp_context.get_start_method(),
++                'requested_max_workers':requested,'actual_max_workers':executor._max_workers})
++            _write_record(trace/'session.json',session)
++        original_submit=executor.submit
++        def submit(function,*task_args,**task_kwargs):
++            try:
++                if (function is not perf_utils.txt_process_tool or task_kwargs or len(task_args)!=5
++                        or list(task_args[4])!=epochs):
++                    raise ValueError('实际子进程任务函数、参数或时间窗不符。')
++                paths=task_args[2]
++                if not isinstance(paths,(str,tuple,list)):raise ValueError('原生mawk输入路径结构变化。')
++                with lock:
++                    session['submissions'].append({'function':'common.perf_utils.txt_process_tool',
++                        'theme':str(task_args[3]),'epoch_range':list(task_args[4]),
++                        'input_path_count':len(paths),'expected_mawk_call':bool(paths)})
++                    _write_record(trace/'session.json',session)
++                return original_submit(function,*task_args,**task_kwargs)
++            except BaseException as exc:
++                with lock:
++                    session['errors'].append('pool_submit_'+type(exc).__name__)
++                    _write_record(trace/'session.json',session)
++                raise
++        executor.submit=submit
++        return executor
++    setattr(guarded_pool,_MARKER,True)
++    perf_csv.ProcessPoolExecutor=guarded_pool
++    return expected_execution_compat_audit()
++
++
++def validate_execution_compat_runtime_audit(audit,*,request_time_range,contract_fingerprint):
++    """Check captured child consumption; does not authenticate unsigned JSON."""
++    try:
++        if not isinstance(audit,dict) or set(audit)!={'schema_version','policy','session','session_sha256','workers','total_mawk_calls'}:
++            raise ValueError('运行审计结构无效。')
++        if type(audit['schema_version']) is not int or audit['schema_version']!=1 or audit['policy']!=POLICY:
++            raise ValueError('运行审计版本过期。')
++        session=audit['session'];validate_execution_compat_audit(session['installation'])
++        validate_contract_audit(session['analyzer_contract'])
++        if (session['schema_version']!=1 or session['policy']!=POLICY
++                or session['request_time_range']!=request_time_range or session['epoch_range']!=_epochs(request_time_range)
++                or session['analyzer_contract']['contract_fingerprint']!=contract_fingerprint
++                or not re.fullmatch('[0-9a-f]{32}',session['nonce'])
++                or type(session['parent_pid']) is not int or session['parent_pid']<=0
++                or session['errors'] or audit['session_sha256']!=_object_sha(session)):
++            raise ValueError('运行审计时间窗、nonce、源码或父进程绑定无效。')
++        if not session['pools'] or not session['submissions']:raise ValueError('未实际提交原生子进程任务。')
++        for pool in session['pools']:
++            if pool['start_method']!='spawn' or type(pool['actual_max_workers']) is not int or pool['actual_max_workers']<=0:
++                raise ValueError('原生spawn/并发约束变化。')
++            requested=pool['requested_max_workers']
++            if requested is not None and (type(requested) is not int or requested!=pool['actual_max_workers']):
++                raise ValueError('原生max_workers被改变。')
++        expected_calls=0
++        for task in session['submissions']:
++            if (task['function']!='common.perf_utils.txt_process_tool' or task['epoch_range']!=session['epoch_range']
++                    or type(task['input_path_count']) is not int or task['input_path_count']<0
++                    or type(task['expected_mawk_call']) is not bool
++                    or task['expected_mawk_call']!=bool(task['input_path_count'])):
++                raise ValueError('原始实际任务/窗口/输入绑定无效。')
++            expected_calls+=int(task['expected_mawk_call'])
++        workers=audit['workers']
++        if not isinstance(workers,list) or not workers or len(workers)>128:raise ValueError('缺少实际子进程记录。')
++        pids=set();total=0
++        for wrapped in workers:
++            record=wrapped['record']
++            if wrapped['sha256']!=_object_sha(record):raise ValueError('实际子进程记录SHA不一致。')
++            validate_contract_audit(record['analyzer_contract'])
++            if (record['schema_version']!=1 or record['policy']!=POLICY
++                    or record['nonce']!=session['nonce'] or record['parent_pid']!=session['parent_pid']
++                    or record['request_time_range']!=request_time_range
++                    or record['analyzer_contract']!=session['analyzer_contract']
++                    or type(record['pid']) is not int or record['pid']<=0 or record['pid'] in pids
++                    or record['pid']==session['parent_pid'] or record['errors']):
++                raise ValueError('实际子进程身份、源码或错误闩锁无效。')
++            pids.add(record['pid'])
++            ini=record['initial_ini']
++            if (ini['time_range']!=request_time_range or ini['log_root']!=session['expected_log_root']
++                    or not re.fullmatch('[0-9a-f]{64}',ini['sha256'])):
++                raise ValueError('实际子进程INI窗口不符。')
++            for row in record['calls']:
++                generation,consumption=row['generation'],row['consumption']
++                if (generation['outside_classifier_bytes_unchanged'] is not True
++                        or type(generation['year']) is not int or generation['year']!=int(request_time_range[:4])):
++                    raise ValueError('生成程序修改范围或年份不符。')
++                for key in ('original_program_sha256','patched_program_sha256','context_sha256'):
++                    if not re.fullmatch('[0-9a-f]{64}',generation[key]):raise ValueError('生成程序摘要缺失。')
++                if (not isinstance(consumption,dict) or consumption['program_sha256']!=generation['patched_program_sha256']
++                        or consumption['program_after_sha256']!=consumption['program_sha256']
++                        or consumption['actual_ini']!=ini or type(consumption['returncode']) is not int
++                        or consumption['returncode']!=0 or type(consumption['program_bytes']) is not int
++                        or consumption['program_bytes']<=0 or type(consumption['input_path_count']) is not int
++                        or consumption['input_path_count']<=0
++                        or not re.fullmatch('[0-9a-f]{64}',consumption['input_paths_sha256'])):
++                    raise ValueError('缺少成功实际mawk消费，或消费程序/窗口被改变。')
++                total+=1
++        if (type(audit['total_mawk_calls']) is not int or not 0<total==audit['total_mawk_calls']==expected_calls):
++            raise ValueError('实际mawk调用数与已提交任务不符。')
++    except (KeyError,TypeError,AttributeError,IndexError) as exc:
++        raise ValueError('原生子进程实际消费审计不完整。') from exc
++    return audit
++
++
++def finalize_execution_compat(trace_dir,*,request_time_range):
++    """Read after the original native pool exits; every real call must succeed."""
++    trace=_plain(trace_dir,directory=True)
++    entries=list(trace.iterdir())
++    if any(path.name!='session.json' and not re.fullmatch(r'worker-[0-9]+\.json',path.name) for path in entries):
++        raise ValueError('子进程兼容审计有额外或未完成文件。')
++    session=_read_record(trace/'session.json')
++    records=[_read_record(path) for path in sorted(entries) if path.name!='session.json']
++    audit={'schema_version':1,'policy':POLICY,'session':session,'session_sha256':_object_sha(session),
++        'workers':[{'record':record,'sha256':_object_sha(record)} for record in records],
++        'total_mawk_calls':sum(len(record['calls']) for record in records)}
++    validate_execution_compat_runtime_audit(audit,request_time_range=request_time_range,
++        contract_fingerprint=session['analyzer_contract']['contract_fingerprint'])
++    return audit
+--- a/scripts/native_log_source.py
++++ b/scripts/native_log_source.py
+@@ -16,6 +16,7 @@
+ from m100_attachment_worker import ANALYSIS_PROFILE
+ from analyzer_contract import validate_contract_audit
+ from runtime_audit import validate_runtime_execution
++from native_execution_compat import validate_execution_compat_audit, validate_execution_compat_runtime_audit
+ from environment_policy import policy as environment_policy, provider
+ 
+ LOG_CLASSES = ('log_fsdA', 'log_fsdB', 'log_xcu_mcu', 'log_bzcu_eth')
+@@ -377,7 +378,9 @@
+         projected = _project_native_metrics(report,metadata)
+         _validate_native_execution(report,metadata,rules)
+         if (data.get('runtime_execution')!=report.get('runtime_execution')
+-                or data.get('analyzer_contract')!=report.get('analyzer_contract')):
++                or data.get('analyzer_contract')!=report.get('analyzer_contract')
++                or data.get('execution_compat')!=report.get('execution_compat')
++                or data.get('execution_compat_runtime')!=report.get('execution_compat_runtime')):
+             raise InputError('已有结果的实际执行审计与完整统计不一致。')
+         quality = report.get('source_quality')
+         if (data.get('source',{}).get('sha256') != detail['sha256']
+@@ -386,6 +389,7 @@
+                 or data.get('analysis_scope') != report['analysis_scope']
+                 or data.get('source_quality') != quality
+                 or data.get('normalization',{}).get('quality') != quality
++                or data.get('metric_input_diagnostics') != report.get('metric_input_diagnostics')
+                 or quality is not None and data.get('normalization') != report.get('normalization')):
+             raise InputError('已有本地结果的指标、状态、解析范围或来源摘要与完整统计不一致。')
+         return data
+@@ -397,6 +401,10 @@
+     inventory=(report.get('source_selection') or {}).get('input_inventory')
+     try:
+         validate_contract_audit(report.get('analyzer_contract'))
++        validate_execution_compat_audit(report.get('execution_compat'))
++        validate_execution_compat_runtime_audit(report.get('execution_compat_runtime'),
++            request_time_range=expected,
++            contract_fingerprint=report['analyzer_contract']['contract_fingerprint'])
+         validate_runtime_execution(report.get('runtime_execution'),request_time_range=expected,
+                                    inventory=inventory,
+                                    rules=json.loads(Path(rules).read_text(encoding='utf-8-sig')))
+@@ -483,6 +491,9 @@
+             'source_selection':data.get('source_selection'),
+             'runtime_execution':data.get('runtime_execution'),
+             'analyzer_contract':data.get('analyzer_contract'),
++            'execution_compat':data.get('execution_compat'),
++            'execution_compat_runtime':data.get('execution_compat_runtime'),
++            'metric_input_diagnostics':data.get('metric_input_diagnostics'),
+             'normalization':normalized,'source_quality':data['source_quality'],
+             'coverage':data.get('coverage',{}),'download':{'counts':downloaded['counts'],'bytes':downloaded['bytes']},
+             'missing_log_classes':missing_sources}
+--- /dev/null
++++ b/scripts/native_metric_diagnostics.py
+@@ -0,0 +1,351 @@
++"""Explain observed empty native metrics without changing their definitions.
++
++The six supported rules have broad tags that can also match profiling,
++configuration, or warning lines.  Only verified, actually selected native input
++members are examined.  Unknown layouts remain unresolved; this module never
++chooses another numeric field, supplies a sample, or changes native statistics.
++"""
++from __future__ import annotations
++
++from collections import Counter, defaultdict
++import copy
++from datetime import datetime, timedelta, timezone
++import hashlib
++import json
++import math
++from pathlib import Path, PurePosixPath
++import re
++import stat
++
++POLICY = "native-missing-input-shapes-v1"
++_TZ = timezone(timedelta(hours=8))
++_NUMBER = re.compile(r"-?[0-9]+(.[0-9]+)?")
++_EXPECTED = {
++    "bevparking_scene_executor_delay": ("bevparking", "FSDA_M100_ULTRA", "ParkingSceneExecutorNode::OnImage", "custom", 'var = "" $18 "," find_digit($10);', "ps_time", 18),
++    "bevparking_scene_postprocess_delay": ("bevparking", "FSDA_M100_ULTRA", "ParkingSceneExecutorNode::OnImage", "custom", 'var = "" $27 "," find_digit($10);', "ps_time", 27),
++    "bevparking_pipeline_scene_head_delay": ("bevparking", "FSDA_M100_ULTRA", "ParkingSceneExecutorNode::OnImage", "custom", 'var = "" $32 "," find_digit($10);', "ps_time", 32),
++    "lidar_safety_fusion_delay": ("lidar", "lidar_container", "exec time:", "default", "12", "ps_default", 12),
++    "prediction_obs": ("predictionA", "FSDA_M100_ULTRA", "obstacle::", "key_next", "", "ps_default", None),
++    "prediction_obs_dynamic": ("predictionA", "FSDA_M100_ULTRA", "obstacle::", "custom", 'var = key_next("|");', "ps_default", None),
++}
++
++
++class MetricDiagnosticsError(ValueError):
++    pass
++
++
++def _sha(raw):
++    return hashlib.sha256(raw).hexdigest()
++
++
++def _canonical(value):
++    return _sha(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
++                           allow_nan=False).encode("utf-8"))
++
++
++def _finite(value):
++    try:
++        return math.isfinite(float(value))
++    except (ValueError, TypeError):
++        return False
++
++
++def _digit(value):
++    match = _NUMBER.search(value)
++    return match.group(0) if match else ""
++
++
++def _configured_value(metric, text, fields):
++    index = _EXPECTED[metric][-1]
++    if index is not None:
++        value = fields[index - 1] if len(fields) >= index else ""
++        return _digit(value) if metric == "lidar_safety_fusion_delay" else value
++    separator = "|" if metric == "prediction_obs_dynamic" else "obstacle::"
++    pieces = text.split(separator)
++    value = pieces[1].strip() if len(pieces) > 1 else ""
++    return _digit(value) if re.match(r"^-?[0-9]+(.[0-9]+)?", value) else ""
++
++
++def _shape(metric, text, fields):
++    if metric.startswith("bevparking_"):
++        if (len(fields) == 9 and fields[6:9] == ["[RecallCheck]", "ParkingSceneExecutorNode::OnImage", "start"]):
++            return "recallcheck_start_without_statistic_fields"
++        if (len(fields) == 14 and fields[6:10] == ["[RecallCheck]", "ParkingSceneExecutorNode::OnImage", "end,", "cost:"]
++                and fields[11:13] == ["ms,", "header:"]):
++            return "recallcheck_end_without_statistic_fields"
++        if (len(fields) == 18 and fields[5:12] == ["[EDSG]:", "UpdateTaskContext", "cpu", "node:",
++                "dag:ParkingSceneExecutorNode::OnImage", "ouptut", "dataID:"]
++                and fields[13:17] == ["buffer", "is", "nullptr", "->"]
++                and re.fullmatch(r"cpu_node\.cc:[0-9]+", fields[17])):
++            return "null_output_warning_without_statistic_fields"
++        if "lios-config:" in text and text.rstrip().endswith("ParkingSceneExecutorNode::OnImage,"):
++            return "configuration_declaration"
++    elif metric == "lidar_safety_fusion_delay":
++        if (len(fields) == 27 and fields[5:7] == ["[EDSG]:", "graph:"]
++                and fields[8:10] == ["context", "idx:"] and fields[11] == "startTime:"
++                and fields[13] == "endTime:" and fields[15:17] == ["running", "time:"]
++                and fields[18:23] == ["ms,", "exceed", "max", "exec", "time:"]
++                and fields[24:26] == ["ms", "->"]):
++            return "graph_budget_warning_not_safety_fusion_statistic"
++    else:
++        if (re.fullmatch(r"\s*(?:struct|enum)\s+dds_(?:perception|parking)_obstacle::[A-Za-z_][A-Za-z_0-9]*\s*\{\s*", text)
++                or re.fullmatch(r"\s*sequence<dds_(?:perception|parking)_obstacle::[A-Za-z_][A-Za-z_0-9]*\s*>\s+[A-Za-z_][A-Za-z_0-9]*;\s*", text)):
++            return "dds_idl_definition_without_measurement_timestamp"
++        if (any(value.startswith("VBSLOG_") for value in fields[5:7])
++                and re.search(r"dds_(?:perception|parking)_obstacle::[A-Za-z_]", text)
++                and any(token in text for token in ("topic idl", "Topic ", "enum ", "struct "))):
++            return "dds_type_registration_not_obstacle_count"
++    return "unknown"
++
++
++def _lines(raw, tag):
++    start = counted = 0
++    number = 1
++    while True:
++        position = raw.find(tag, start)
++        if position < 0:
++            return
++        lower = raw.rfind(b"\n", 0, position) + 1
++        upper = raw.find(b"\n", position)
++        if upper < 0:
++            upper = len(raw)
++        number += raw.count(b"\n", counted, lower)
++        counted = lower
++        yield number, raw[lower:upper].rstrip(b"\r")
++        start = upper + 1
++
++
++def _rule_matches(metric, row):
++    theme, soc, tag, function, expression, ps, _ = _EXPECTED[metric]
++    rule = row.get("rule") or {}
++    return (row.get("theme") == theme and rule.get("soc_type") == soc
++            and rule.get("log_tag") == tag and rule.get("func") == function
++            and rule.get("input") == expression and rule.get("ps_type") == ps
++            and rule.get("calculate_type", "") == "")
++
++
++def _time_window(report):
++    window = report.get("metadata", {}).get("time_range")
++    if not isinstance(window, str) or not re.fullmatch(r"[0-9]{14}/[0-9]{14}", window):
++        raise MetricDiagnosticsError("指标诊断缺少精确请求窗口。")
++    parts = [datetime.strptime(part, "%Y%m%d%H%M%S").replace(tzinfo=_TZ) for part in window.split("/")]
++    if parts[0] >= parts[1]:
++        raise MetricDiagnosticsError("指标诊断请求窗口无效。")
++    return window, parts[0].year, [part.timestamp() for part in parts]
++
++
++def _path(root, relative):
++    if not isinstance(relative, str):
++        raise MetricDiagnosticsError("实际成员路径缺失。")
++    pure = PurePosixPath(relative)
++    if (pure.is_absolute() or "\\" in relative or any(part in ("", ".", "..") for part in relative.split("/"))
++            or not pure.parts or pure.parts[0] != "log"):
++        raise MetricDiagnosticsError("指标诊断成员路径越界。")
++    path = root.joinpath(*pure.parts)
++    if not path.resolve(strict=True).is_relative_to(root):
++        raise MetricDiagnosticsError("指标诊断实际成员不在本任务目录。")
++    return path
++
++
++def _unavailable(row, name, error, operation):
++    """An optional diagnostic cannot invalidate already computed statistics.
++
++    This records only an OS failure, never a successful identity check.  The
++    caller must still propagate unsafe paths, non-files, or changed contents.
++    """
++    row.update(status="unresolved", reason="selected_input_unavailable_unresolved", scan_complete=False)
++    row.setdefault("input_read_errors", []).append({"member": name, "operation": operation,
++        "error_type": type(error).__name__, "errno": error.errno})
++
++
++def build_metric_input_diagnostics(report, log_root=None):
++    """Return evidence about supported *empty* rules from selected raw inputs.
++
++    Counts precede native state-boundary trimming and are therefore explicitly
++    not substituted for native retained-sample counts.  Member hashing binds
++    this read to the already completed execution audit.  No raw line is emitted.
++    """
++    window, year, epochs = _time_window(report)
++    runtime = report.get("runtime_execution") or {}
++    if (runtime.get("status") != "verified" or runtime.get("request_time_range") != window
++            or runtime.get("expected_epoch_range") != epochs):
++        raise MetricDiagnosticsError("指标诊断与原生运行审计窗口不一致。")
++    supplied_root = log_root if log_root is not None else runtime.get("flat_log_root")
++    if supplied_root is None:
++        raise MetricDiagnosticsError("指标诊断缺少实际输入目录。")
++    root_error = None
++    try:
++        root = Path(supplied_root).resolve(strict=True)
++    except OSError as error:
++        root, root_error = None, error
++    rows = {}
++    missing = [row for row in report.get("statistics", []) if row.get("data_status", row.get("status")) == "missing"]
++    for row in missing:
++        metric = row.get("metric")
++        if metric not in _EXPECTED:
++            continue
++        if metric in rows:
++            raise MetricDiagnosticsError("指标诊断遇到重复规则键。")
++        rows[metric] = {
++            "theme": row.get("theme"), "metric": metric,
++            "native_diagnostic": str(row.get("diagnostic") or ""),
++            "required_input": {"soc_type": row.get("rule", {}).get("soc_type"),
++                "log_tag": row.get("rule", {}).get("log_tag"), "expression": row.get("rule", {}).get("input"),
++                "configured_field": _EXPECTED[metric][-1]},
++            "status": "unresolved", "reason": "rule_contract_changed" if not _rule_matches(metric, row) else "pending",
++            "counts": Counter({key: 0 for key in ("raw_tag_hits", "invalid_timestamp_tag_hits", "invalid_encoding_tag_hits", "in_window_tag_hits",
++                "configured_numeric_values", "configured_non_numeric_values")}),
++            "field_counts_in_window": Counter(), "shapes_in_window": Counter(), "untimed_shapes": Counter(),
++            "sample_line_sha256": {}, "selected_members": {}, "scan_complete": True,
++        }
++    extractions = {row.get("theme"): row for row in runtime.get("extractions", [])}
++    requests = defaultdict(lambda: defaultdict(list))
++    for metric, row in rows.items():
++        if row["reason"] != "pending":
++            continue
++        if root_error is not None:
++            _unavailable(row, "", root_error, "resolve_log_root")
++            continue
++        extraction = extractions.get(row["theme"])
++        if not isinstance(extraction, dict):
++            row["reason"] = "missing_runtime_theme_observation"
++            continue
++        members, paths = extraction.get("actual_members", {}), extraction.get("actual_paths", {})
++        if set(members) != set(paths) or extraction.get("record_epoch_range") != epochs:
++            raise MetricDiagnosticsError("指标诊断实际主题成员或窗口变化。")
++        for name, expected in members.items():
++            try:
++                path = _path(root, paths[name])
++            except OSError as error:
++                _unavailable(row, name, error, "resolve_member")
++                continue
++            if path.name != name:
++                raise MetricDiagnosticsError("指标诊断成员名与路径不一致。")
++            requests[path][row["required_input"]["log_tag"]].append((metric, name, expected))
++        if not members:
++            row.update(status="explained", reason="no_selected_source_members")
++    for path, tags in requests.items():
++        try:
++            before = path.stat()
++            if not stat.S_ISREG(before.st_mode):
++                raise MetricDiagnosticsError("指标诊断实际成员不是普通文件。")
++            identity = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
++            raw = path.read_bytes()
++            digest = _sha(raw)
++            after = path.stat()
++        except OSError as error:
++            for bindings in tags.values():
++                for metric, name, _ in bindings:
++                    _unavailable(rows[metric], name, error, "read_member")
++            continue
++        if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) != identity:
++            raise MetricDiagnosticsError("指标诊断过程中原始成员变化。")
++        for tag, bindings in tags.items():
++            for metric, name, expected in bindings:
++                if digest != expected.get("sha256") or len(raw) != expected.get("bytes"):
++                    raise MetricDiagnosticsError("指标诊断成员内容与原生运行审计不符。")
++                rows[metric]["selected_members"][name] = copy.deepcopy(expected)
++            for line_number, line in _lines(raw, tag.encode("utf-8")):
++                try:
++                    text = line.decode("utf-8", errors="strict")
++                except UnicodeDecodeError:
++                    for metric, _, _ in bindings:
++                        row = rows[metric]
++                        row["counts"]["raw_tag_hits"] += 1
++                        row["counts"]["invalid_encoding_tag_hits"] += 1
++                        row["scan_complete"] = False
++                        if "invalid_encoding" not in row["sample_line_sha256"]:
++                            row["sample_line_sha256"]["invalid_encoding"] = {"sha256": _sha(line), "member": path.name, "line": line_number}
++                    continue
++                fields = text.split()
++                try:
++                    stamp = datetime.strptime(str(year) + "-" + fields[0] + " " + fields[1],
++                                              "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=_TZ).timestamp()
++                except (ValueError, IndexError):
++                    stamp = None
++                for metric, _, _ in bindings:
++                    row = rows[metric]
++                    row["counts"]["raw_tag_hits"] += 1
++                    if stamp is None:
++                        row["counts"]["invalid_timestamp_tag_hits"] += 1
++                        shape = _shape(metric, text, fields)
++                        row["untimed_shapes"][shape] += 1
++                        if "untimed_" + shape not in row["sample_line_sha256"]:
++                            row["sample_line_sha256"]["untimed_" + shape] = {"sha256": _sha(line), "member": path.name, "line": line_number}
++                        continue
++                    if not epochs[0] <= stamp <= epochs[1]:
++                        continue
++                    row["counts"]["in_window_tag_hits"] += 1
++                    shape = _shape(metric, text, fields)
++                    row["shapes_in_window"][shape] += 1
++                    row["field_counts_in_window"][str(len(fields))] += 1
++                    value = _configured_value(metric, text, fields)
++                    row["counts"]["configured_numeric_values" if _finite(value) else "configured_non_numeric_values"] += 1
++                    if shape not in row["sample_line_sha256"]:
++                        row["sample_line_sha256"][shape] = {"sha256": _sha(line), "member": path.name, "line": line_number}
++        # Release this member before reading the next; do not retain vehicle
++        # body data as part of the exported diagnostic evidence.
++        del raw
++    for metric, row in rows.items():
++        if row["reason"] == "pending":
++            counts = row["counts"]
++            if not counts["raw_tag_hits"]:
++                row.update(status="explained", reason="no_tag_matches_in_selected_inputs")
++            elif counts["invalid_encoding_tag_hits"]:
++                row.update(reason="invalid_encoding_in_target_lines_unresolved")
++            elif row["untimed_shapes"]["unknown"]:
++                row.update(reason="unrecognized_untimed_input_layout_unresolved")
++            elif not counts["in_window_tag_hits"]:
++                row.update(status="explained", reason="no_tag_matches_inside_request_window")
++            elif counts["configured_numeric_values"]:
++                row.update(reason="numeric_input_exists_native_missing_unresolved")
++            elif row["shapes_in_window"]["unknown"]:
++                row.update(reason="unrecognized_input_layout_unresolved")
++            else:
++                row.update(status="explained", reason="only_recognized_non_metric_or_incompatible_field_layouts")
++        if row["reason"] == "only_recognized_non_metric_or_incompatible_field_layouts":
++            if metric.startswith("bevparking_"):
++                row["message"] = "命中的是调用跟踪、配置或空指针告警，未提供本规则要求的统计字段；保留缺失，不将其它耗时替代本指标。"
++            elif metric == "lidar_safety_fusion_delay":
++                row["message"] = "命中的是图执行超预算告警，规则指定的第12字段为startTime文本；图耗时和预算不能替代安全融合时延。"
++            else:
++                row["message"] = "命中的是DDS类型注册文本，未打印本规则要求的障碍物计数；保留缺失。"
++        else:
++            row["message"] = {
++                "rule_contract_changed": "规则定义已变化，本诊断未自动适配。",
++                "missing_runtime_theme_observation": "缺少该主题的实际文件消费证明，尚未归因。",
++                "no_selected_source_members": "该主题没有选中的源日志文件。",
++                "no_tag_matches_in_selected_inputs": "该主题实际选中的日志未命中目标标签。",
++                "no_tag_matches_inside_request_window": "该主题实际选中的日志没有可定位到请求窗口内的目标标签。",
++                "numeric_input_exists_native_missing_unresolved": "按原规则可提取到数值，但原生统计仍为空，尚未查清过滤或统计阶段原因。",
++                "unrecognized_input_layout_unresolved": "命中尚未识别的日志格式，不能断言无有效样本，需继续检查。",
++                "unrecognized_untimed_input_layout_unresolved": "存在无法定位采集时间且格式未识别的标签行，不能判断其是否属于请求窗口，需继续检查。",
++                "invalid_encoding_in_target_lines_unresolved": "目标标签行含无法按UTF-8解码的字节，未用忽略字符方式推断数值或无样本，需继续检查；原统计值保留。",
++                "selected_input_unavailable_unresolved": "附加诊断无法读取部分已选中的来源文件，检查未完成；原统计值保留，不能据此判定无样本。",
++            }.get(row["reason"], "尚未归因。")
++        for key in ("counts", "field_counts_in_window", "shapes_in_window", "untimed_shapes"):
++            row[key] = dict(row[key])
++    result = {
++        "schema_version": 1, "policy": POLICY, "request_time_range": window,
++        "counts_stage": "selected_raw_lines_before_native_state_boundary_trim",
++        "counts_are_native_final_samples": False,
++        "statistical_values_or_rules_modified": False,
++        "continuous_vehicle_log_coverage_proven": False,
++        "supported_missing_rules_checked": len(rows),
++        "other_missing_rules_not_classified_here": len(missing) - len(rows),
++        "unresolved_metrics": sorted(name for name, row in rows.items() if row["status"] != "explained"),
++        "metrics": rows,
++    }
++    result["evidence_sha256"] = _canonical(result)
++    return result
++
++
++def attach_metric_input_diagnostics(report, log_root=None):
++    """Copy result and add diagnostics; all preexisting fields stay unchanged."""
++    evidence = build_metric_input_diagnostics(report, log_root)
++    output = copy.deepcopy(report)
++    output["metric_input_diagnostics"] = evidence
++    for row in output.get("statistics", []):
++        if row.get("metric") in evidence["metrics"]:
++            row["input_diagnostic"] = copy.deepcopy(evidence["metrics"][row["metric"]])
++    return output
+--- a/scripts/report_attachments.py
++++ b/scripts/report_attachments.py
+@@ -55,6 +55,13 @@
+ 
+ def _hash(value):
+     return isinstance(value, str) and re.fullmatch(r'[0-9a-f]{64}', value) is not None
++
++
++def artifact_filename(role, request_sha256, sha256):
++    """Return the exact card name shared by report copy and uploaded media."""
++    if role not in ROLES or not _hash(request_sha256) or not _hash(sha256):
++        raise InputError('完整 Excel 附件缺少有效角色、请求或内容指纹。')
++    return ('Base' if role == 'baseline' else 'PCM_update') + '_' + request_sha256[:12] + '_' + sha256[:12] + '.xlsx'
+ 
+ 
+ def _safe_path(path, root):
+@@ -147,7 +154,7 @@
+         path = _safe_path(item['path'], role_root)
+         if path.suffix.lower() != '.xlsx' or path == role_root:
+             raise InputError('附件必须是本任务角色目录中的 XLSX。')
+-        name = ('Base' if role == 'baseline' else 'PCM_update') + '_' + item['request_sha256'][:12] + '_' + item['sha256'][:12] + '.xlsx'
++        name = artifact_filename(role, item['request_sha256'], item['sha256'])
+         artifacts[role] = {key: item[key] for key in ('role', 'request', 'environment',
+             'request_sha256', 'rules_sha256', 'sha256', 'bytes')}
+         artifacts[role].update(path=str(path), file_name=name)
+--- a/scripts/test_full_integration.py
++++ b/scripts/test_full_integration.py
+@@ -64,6 +64,8 @@
+     result={'status':status,'request':metadata,'environment':environment,'source_policy':native.SOURCE_POLICY,
+             'source_selection':report['source_selection'],
+             'runtime_execution':report['runtime_execution'], 'analyzer_contract':report['analyzer_contract'],
++            'execution_compat':report['execution_compat'],
++            'execution_compat_runtime':report['execution_compat_runtime'],
+             'rules_sha256':native.digest(rules),'metrics':metrics,'analysis_scope':report['analysis_scope'],
+             'source':{'environment':environment,'sha256':native.digest(detail)},
+             'artifact':{'path':str(html),'sha256':native.digest(html)},
+--- a/scripts/test_native_cache_identity.py
++++ b/scripts/test_native_cache_identity.py
+@@ -45,6 +45,8 @@
+             'source_selection':copy.deepcopy(self.report['source_selection']),
+             'runtime_execution':copy.deepcopy(self.report['runtime_execution']),
+             'analyzer_contract':copy.deepcopy(self.report['analyzer_contract']),
++            'execution_compat':copy.deepcopy(self.report['execution_compat']),
++            'execution_compat_runtime':copy.deepcopy(self.report['execution_compat_runtime']),
+             'source':{'environment':'testtwo','sha256':native.digest(self.detail)},
+             'artifact':{'path':str(html),'sha256':native.digest(html)},
+             'full_statistics':{'path':str(self.detail),'sha256':native.digest(self.detail),
+@@ -118,9 +120,51 @@
+             self.read()
+ 
+     def test_previous_profile_is_not_reused_as_new_runtime_proof(self):
+-        self.cache['analysis_scope']['profile']='m100-full-native-audited-v4'
+-        self.save()
+-        with self.assertRaisesRegex(InputError,'请求、规则或解析范围'):
++        for profile in ('m100-full-native-audited-v5','m100-full-native-audited-v6'):
++            with self.subTest(profile=profile):
++                self.cache['analysis_scope']['profile']=profile
++                self.save()
++                with self.assertRaisesRegex(InputError,'请求、规则或解析范围'):
++                    self.read()
++
++    def test_parent_only_compat_receipt_cannot_replace_actual_spawn_proof(self):
++        self.report.pop('execution_compat_runtime')
++        self.cache.pop('execution_compat_runtime')
++        self.rewrite_detail_with_valid_hashes()
++        with self.assertRaisesRegex(InputError,'实际执行审计'):
++            self.read()
++
++    def test_rewritten_hashes_do_not_accept_missing_actual_mawk_consumption(self):
++        self.report['execution_compat_runtime']['workers'][0]['record']['calls'][0]['consumption']=None
++        self.cache['execution_compat_runtime']=copy.deepcopy(self.report['execution_compat_runtime'])
++        self.rewrite_detail_with_valid_hashes()
++        with self.assertRaisesRegex(InputError,'实际执行审计'):
++            self.read()
++
++    def test_cache_cannot_drop_actual_spawn_proof_kept_in_report(self):
++        self.cache.pop('execution_compat_runtime')
++        self.save()
++        with self.assertRaisesRegex(InputError,'实际执行审计'):
++            self.read()
++
++    def test_missing_portable_hex_execution_proof_is_rejected(self):
++        self.report.pop('execution_compat')
++        self.cache.pop('execution_compat')
++        self.rewrite_detail_with_valid_hashes()
++        with self.assertRaisesRegex(InputError,'实际执行审计'):
++            self.read()
++
++    def test_rewritten_hashes_do_not_accept_changed_hex_algorithm(self):
++        self.report['execution_compat']['brake_bit_tests_preserved']=False
++        self.cache['execution_compat']=copy.deepcopy(self.report['execution_compat'])
++        self.rewrite_detail_with_valid_hashes()
++        with self.assertRaisesRegex(InputError,'实际执行审计'):
++            self.read()
++
++    def test_cache_cannot_drop_compatibility_proof_kept_in_report(self):
++        self.cache.pop('execution_compat')
++        self.save()
++        with self.assertRaisesRegex(InputError,'实际执行审计'):
+             self.read()
+ 
+     def test_previous_execution_schema_is_rejected_even_with_new_profile(self):
+--- /dev/null
++++ b/scripts/test_native_execution_compat.py
+@@ -0,0 +1,204 @@
++"""Synthetic regression of the exact portable brake conversion boundary."""
++from __future__ import annotations
++
++import copy
++import shutil
++import subprocess
++import types
++import unittest
++
++from native_execution_compat import (
++    ORIGINAL_CLASSIFIER, PATCHED_CLASSIFIER, POLICY, _epochs, _object_sha, expected_execution_compat_audit,
++    install_execution_compat, patch_awk_program, validate_execution_compat_audit,
++    validate_execution_compat_runtime_audit,
++)
++
++
++def synthetic_runtime_audit(request_time_range,contract_fingerprint):
++    """Explicit test-only mock; never represents a real AWK invocation."""
++    from test_analyzer_contract import synthetic_contract_audit
++    contract=synthetic_contract_audit()
++    if contract['contract_fingerprint']!=contract_fingerprint:raise ValueError('unknown synthetic contract')
++    epoch=_epochs(request_time_range)
++    session={'schema_version':1,'policy':POLICY,'nonce':'a'*32,'parent_pid':100,
++        'request_time_range':request_time_range,'epoch_range':epoch,
++        'source_root':'/synthetic/analyzer','expected_log_root':'/synthetic/input/perf',
++        'analyzer_contract':contract,'installation':expected_execution_compat_audit(),
++        'pools':[{'start_method':'spawn','requested_max_workers':2,'actual_max_workers':2}],
++        'submissions':[{'function':'common.perf_utils.txt_process_tool','theme':'synthetic',
++                        'epoch_range':epoch,'input_path_count':1,'expected_mawk_call':True}],
++        'errors':[]}
++    ini={'time_range':request_time_range,'log_root':'/synthetic/input/perf','sha256':'b'*64}
++    record={'schema_version':1,'policy':POLICY,'nonce':session['nonce'],
++        'parent_pid':100,'pid':101,'request_time_range':request_time_range,
++        'analyzer_contract':copy.deepcopy(contract),'initial_ini':ini,
++        'calls':[{'generation':{'original_program_sha256':'c'*64,'patched_program_sha256':'d'*64,
++                               'context_sha256':'e'*64,'year':int(request_time_range[:4]),
++                               'outside_classifier_bytes_unchanged':True},
++                  'consumption':{'program_sha256':'d'*64,'program_bytes':120,
++                       'input_path_count':1,'input_paths_sha256':'f'*64,'actual_ini':copy.deepcopy(ini),
++                       'returncode':0,'program_after_sha256':'d'*64}}],
++        'errors':[]}
++    return {'schema_version':1,'policy':POLICY,'session':session,'session_sha256':_object_sha(session),
++            'workers':[{'record':record,'sha256':_object_sha(record)}],'total_mawk_calls':1}
++
++
++def _rehash(audit):
++    audit['session_sha256']=_object_sha(audit['session'])
++    for worker in audit['workers']:worker['sha256']=_object_sha(worker['record'])
++    return audit
++
++
++def _python_brake(a, b):
++    first, second = int(a, 16), int(b, 16)
++    bits = (first // 2 % 8, second % 8)
++    return '自研EMB' if bits == (1, 0) else '博世EMB' if bits == (1, 1) else '其他制动'
++
++
++def _run(command, classifier, cases):
++    program = ('BEGIN { FS="\\t" }\n' + classifier
++               + '\n{ print classify_brake($1, $2) }\n')
++    body = ''.join(a + '\t' + b + '\n' for a, b in cases)
++    result = subprocess.run(command + [program], input=body.encode('utf-8'),
++                            capture_output=True, timeout=20, check=True)
++    if result.stderr:
++        raise AssertionError(result.stderr.decode('utf-8'))
++    rows = result.stdout.decode('utf-8').splitlines()
++    if len(rows) != len(cases):
++        raise AssertionError('AWK output did not preserve one classification per input')
++    return rows
++
++
++class ExecutionCompatContractTests(unittest.TestCase):
++    def test_replace_only_classifier_bytes(self):
++        before = 'unchanged-prefix\n' + ORIGINAL_CLASSIFIER + '\nunchanged-suffix'
++        after = patch_awk_program(before)
++        self.assertEqual(after, 'unchanged-prefix\n' + PATCHED_CLASSIFIER + '\nunchanged-suffix')
++
++    def test_missing_classifier_rejected(self):
++        for value in (None, {}, '', ORIGINAL_CLASSIFIER.replace('b1/2', 'b1/4')):
++            with self.subTest(value=type(value).__name__), self.assertRaises(ValueError):
++                patch_awk_program(value)
++
++    def test_duplicate_or_already_patched_rejected(self):
++        for value in (ORIGINAL_CLASSIFIER * 2, PATCHED_CLASSIFIER,
++                      ORIGINAL_CLASSIFIER + 'function classify_brake(x) {}',
++                      ORIGINAL_CLASSIFIER + '_walkthrough_hex_decimal_v1'):
++            with self.subTest(value=value[-25:]), self.assertRaises(ValueError):
++                patch_awk_program(value)
++
++    def test_audit_accepts_exact_algorithm(self):
++        audit = expected_execution_compat_audit()
++        self.assertEqual(validate_execution_compat_audit(audit), audit)
++
++    def test_audit_rejects_tampered_fields(self):
++        audit = expected_execution_compat_audit()
++        for key, value in audit.items():
++            changed = dict(audit)
++            changed[key] = not value if isinstance(value, bool) else value + 'changed'
++            with self.subTest(field=key), self.assertRaises(ValueError):
++                validate_execution_compat_audit(changed)
++
++    def test_audit_rejects_missing_extra_and_bool_integer(self):
++        audit = expected_execution_compat_audit()
++        for changed in (None, {}, dict(audit, extra=True),
++                        {k:v for k,v in audit.items() if k != 'policy'},
++                        dict(audit, clean_hex_only=1)):
++            with self.subTest(value=changed), self.assertRaises(ValueError):
++                validate_execution_compat_audit(changed)
++
++    def test_unknown_builder_not_installed(self):
++        namespace = types.SimpleNamespace(_build_awk_program=lambda c, y: ORIGINAL_CLASSIFIER)
++        original = namespace._build_awk_program
++        with self.assertRaises(ValueError):
++            install_execution_compat(namespace)
++        self.assertIs(namespace._build_awk_program, original)
++
++    def test_missing_builder_rejected(self):
++        for namespace in (types.SimpleNamespace(), types.SimpleNamespace(_build_awk_program=3)):
++            with self.assertRaises(ValueError):
++                install_execution_compat(namespace)
++
++
++class ActualConsumptionReceiptTests(unittest.TestCase):
++    request='20261021154800/20261021162200'
++    def fresh(self):
++        from test_analyzer_contract import synthetic_contract_audit
++        contract=synthetic_contract_audit()
++        return synthetic_runtime_audit(self.request,contract['contract_fingerprint'])
++    def validate(self,value):
++        from test_analyzer_contract import synthetic_contract_audit
++        return validate_execution_compat_runtime_audit(value,request_time_range=self.request,
++                    contract_fingerprint=synthetic_contract_audit()['contract_fingerprint'])
++    def test_exact_test_receipt_accepted(self):
++        self.assertEqual(self.validate(self.fresh())['total_mawk_calls'],1)
++    def test_parent_only_or_missing_child_rejected(self):
++        for value in (expected_execution_compat_audit(),dict(self.fresh(),workers=[]),
++                      dict(self.fresh(),total_mawk_calls=0)):
++            with self.subTest(value=value.keys()),self.assertRaises(ValueError):self.validate(value)
++    def test_wrong_window_nonce_pid_or_contract_rejected(self):
++        for field,value in (('request_time_range','20261021145000/20261021152400'),
++                            ('nonce','b'*32),('parent_pid',200),('pid',100)):
++            audit=self.fresh();audit['workers'][0]['record'][field]=value
++            with self.subTest(field=field),self.assertRaises(ValueError):self.validate(_rehash(audit))
++    def test_unconsumed_generated_program_rejected(self):
++        audit=self.fresh();audit['workers'][0]['record']['calls'][0]['consumption']=None
++        with self.assertRaises(ValueError):self.validate(_rehash(audit))
++    def test_failed_mawk_and_swallowed_exception_rejected(self):
++        for kind in ('nonzero','child_error','parent_error'):
++            audit=self.fresh();record=audit['workers'][0]['record']
++            if kind=='nonzero':record['calls'][0]['consumption']['returncode']=1
++            elif kind=='child_error':record['errors'].append('caught_by_native')
++            else:audit['session']['errors'].append('caught_by_native')
++            with self.subTest(kind=kind),self.assertRaises(ValueError):self.validate(_rehash(audit))
++    def test_program_before_after_and_ini_tampering_rejected(self):
++        for field,value in (('program_sha256','a'*64),('program_after_sha256','a'*64),
++                            ('actual_ini',{'time_range':'wrong'})):
++            audit=self.fresh();audit['workers'][0]['record']['calls'][0]['consumption'][field]=value
++            with self.subTest(field=field),self.assertRaises(ValueError):self.validate(_rehash(audit))
++    def test_actual_task_or_spawn_constraints_rejected(self):
++        for kind in ('window','function','context','workers','count'):
++            audit=self.fresh();session=audit['session']
++            if kind=='window':session['submissions'][0]['epoch_range']=[0,1]
++            elif kind=='function':session['submissions'][0]['function']='other.task'
++            elif kind=='context':session['pools'][0]['start_method']='fork'
++            elif kind=='workers':session['pools'][0]['actual_max_workers']=3
++            else:session['submissions'][0]['input_path_count']=0
++            with self.subTest(kind=kind),self.assertRaises(ValueError):self.validate(_rehash(audit))
++    def test_old_v6_static_only_receipt_rejected(self):
++        audit=self.fresh();audit['session']['installation']['policy']='portable-brake-hex-v1'
++        with self.assertRaises(ValueError):self.validate(_rehash(audit))
++
++
++@unittest.skipUnless(shutil.which('mawk'), 'native mawk required; covered in Linux/WSL')
++class RealMawkCompatTests(unittest.TestCase):
++    def test_all_65536_byte_pairs_equal_independent_integer_oracle(self):
++        cases = [(f'{a:02X}', f'{b:02x}') for a in range(256) for b in range(256)]
++        self.assertEqual(_run(['mawk'], PATCHED_CLASSIFIER, cases),
++                         [_python_brake(a, b) for a, b in cases])
++
++    def test_case_and_leading_zero_variants(self):
++        cases = [('53', '30'), ('53', '31'), ('aB', 'cD'),
++                 ('Ab', 'Cd'), ('00000053', '00000030'), ('2', '0'), ('3', '1')]
++        self.assertEqual(_run(['mawk'], PATCHED_CLASSIFIER, cases),
++                         [_python_brake(a, b) for a, b in cases])
++
++    def test_malformed_and_empty_inputs_keep_original_mawk_coercion(self):
++        invalid = ['', 'GG', '0x53', ' 53', '-53', '53.5', '53GG', '30tail', '+53']
++        cases = [(a,b) for a in invalid for b in invalid + ['30','31']]
++        cases += [('53', b) for b in invalid]
++        self.assertEqual(_run(['mawk'], PATCHED_CLASSIFIER, cases),
++                         _run(['mawk'], ORIGINAL_CLASSIFIER, cases))
++
++    @unittest.skipUnless(shutil.which('gawk'), 'optional independent hex-capable AWK oracle')
++    def test_hex_capable_original_classifier_is_unchanged(self):
++        cases = [(f'{a:02X}', f'{b:02x}') for a in range(256) for b in range(256)]
++        invalid = ['', 'GG', '0x53', ' 53', '-53', '53.5', '53GG', '30tail', '+53']
++        cases += [(a,b) for a in invalid for b in invalid + ['30','31']]
++        cases += [('53', b) for b in invalid]
++        self.assertEqual(_run(['gawk','--non-decimal-data'], PATCHED_CLASSIFIER, cases),
++                         _run(['gawk','--non-decimal-data'], ORIGINAL_CLASSIFIER, cases))
++
++
++if __name__ == '__main__':
++    unittest.main()
+--- /dev/null
++++ b/scripts/test_native_metric_diagnostics.py
+@@ -0,0 +1,261 @@
++from __future__ import annotations
++import copy
++from datetime import datetime, timezone, timedelta
++import hashlib
++import json
++from pathlib import Path
++import tempfile
++import unittest
++from unittest.mock import patch
++
++from native_metric_diagnostics import (MetricDiagnosticsError, _EXPECTED,
++                                      attach_metric_input_diagnostics,
++                                      build_metric_input_diagnostics)
++
++
++class MetricDiagnosticsTests(unittest.TestCase):
++    def setUp(self):
++        self.directory = tempfile.TemporaryDirectory()
++        self.addCleanup(self.directory.cleanup)
++        self.root = Path(self.directory.name)
++        self.window = "20261023150000/20261023153500"
++        self.epochs = [datetime(2026, 10, 23, 15, minute, tzinfo=timezone(timedelta(hours=8))).timestamp()
++                       for minute in (0, 35)]
++
++    def report(self, metric, lines, *, status="missing"):
++        theme, soc, tag, function, expression, ps, _ = _EXPECTED[metric]
++        raw = ("\n".join(lines) + "\n").encode()
++        path = self.root / "log" / soc / "synthetic.log"
++        path.parent.mkdir(parents=True, exist_ok=True)
++        path.write_bytes(raw)
++        rule = {"soc_type": soc, "log_tag": tag, "func": function, "input": expression,
++                "ps_type": ps, "calculate_type": ""}
++        return {"metadata": {"time_range": self.window}, "status": "partial",
++                "statistics": [{"theme": theme, "metric": metric, "status": status, "data_status": status,
++                    "rule": rule, "statistics": {"mean": "-", "P99": "-"}, "diagnostic": "native missing"}],
++                "runtime_execution": {"status": "verified", "request_time_range": self.window,
++                    "expected_epoch_range": self.epochs, "flat_log_root": str(self.root),
++                    "extractions": [{"theme": theme, "record_epoch_range": self.epochs,
++                        "actual_paths": {path.name: path.relative_to(self.root).as_posix()},
++                        "actual_members": {path.name: {"sha256": hashlib.sha256(raw).hexdigest(),
++                                                       "bytes": len(raw), "source": "synthetic_source"}}}]}}
++
++    def evidence(self, report, metric):
++        return build_metric_input_diagnostics(report)["metrics"][metric]
++
++    def replace_raw(self, report, raw):
++        extraction = report["runtime_execution"]["extractions"][0]
++        name = next(iter(extraction["actual_members"]))
++        path = self.root / extraction["actual_paths"][name]
++        path.write_bytes(raw)
++        extraction["actual_members"][name].update(sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw))
++        return path
++
++    def test_recallcheck_is_not_three_native_statistics(self):
++        lines = ["10-23 15:10:00.001 100 101 W profiling.h:60: [RecallCheck] ParkingSceneExecutorNode::OnImage start",
++                 "10-23 15:10:00.002 100 101 W profiling.h:66: [RecallCheck] ParkingSceneExecutorNode::OnImage end, cost: 0 ms, header: 0"]
++        for metric in _EXPECTED:
++            if metric.startswith("bevparking_"):
++                with self.subTest(metric=metric):
++                    row = self.evidence(self.report(metric, lines), metric)
++                    self.assertEqual(row["status"], "explained")
++                    self.assertEqual(row["counts"]["in_window_tag_hits"], 2)
++                    self.assertEqual(row["counts"]["configured_numeric_values"], 0)
++                    self.assertEqual(row["field_counts_in_window"], {"9": 1, "14": 1})
++
++    def test_budget_warning_cannot_become_safety_fusion_delay(self):
++        metric = "lidar_safety_fusion_delay"
++        row = self.evidence(self.report(metric, ["10-23 15:10:00.001 100 101 E [EDSG]: graph: synthetic_lidar, context idx: 2, startTime: 1000, endTime: 1001, running time: 172 ms, exceed max exec time: 100 ms -> graph_context.cc:638"]), metric)
++        self.assertEqual(row["status"], "explained")
++        self.assertEqual(row["counts"]["configured_numeric_values"], 0)
++        self.assertEqual(row["shapes_in_window"], {"graph_budget_warning_not_safety_fusion_statistic": 1})
++
++    def test_dds_type_registration_not_prediction_count(self):
++        text = "10-23 15:10:00.001 100 101 W VBSLOG_DRTRACEPOINT_MANAGER: Info [1] Reg topic idl, topic id: 41, name: synthetic, idl type: 31,dds_parking_obstacle::Obstacles, define: struct dds_base::Point {"
++        for metric in ("prediction_obs", "prediction_obs_dynamic"):
++            with self.subTest(metric=metric):
++                row = self.evidence(self.report(metric, [text]), metric)
++                self.assertEqual(row["status"], "explained")
++                self.assertEqual(row["shapes_in_window"], {"dds_type_registration_not_obstacle_count": 1})
++
++    def test_unknown_layout_stays_unresolved(self):
++        metric = "bevparking_scene_executor_delay"
++        row = self.evidence(self.report(metric, ["10-23 15:10:00.001 100 101 W new-format: ParkingSceneExecutorNode::OnImage renamed fields"]), metric)
++        self.assertEqual(row["status"], "unresolved")
++        self.assertEqual(row["reason"], "unrecognized_input_layout_unresolved")
++
++    def test_numeric_configured_input_stays_unresolved_when_native_missing(self):
++        metric = "lidar_safety_fusion_delay"
++        text = "10-23 15:10:00.001 100 101 W synthetic: a b c exec time: 12.5ms"
++        row = self.evidence(self.report(metric, [text]), metric)
++        self.assertEqual(row["status"], "unresolved")
++        self.assertEqual(row["reason"], "numeric_input_exists_native_missing_unresolved")
++        self.assertEqual(row["counts"]["configured_numeric_values"], 1)
++
++    def test_rule_change_not_auto_accepted(self):
++        metric = "prediction_obs"
++        report = self.report(metric, [])
++        report["statistics"][0]["rule"]["input"] = "a_new_expression"
++        row = self.evidence(report, metric)
++        self.assertEqual(row["status"], "unresolved")
++        self.assertEqual(row["reason"], "rule_contract_changed")
++
++    def test_window_excludes_other_time_and_keeps_closed_end(self):
++        metric = "prediction_obs"
++        report = self.report(metric, ["10-23 14:59:59.999 100 101 W synthetic: obstacle::7",
++                                       "10-23 15:35:00.000 100 101 W synthetic: obstacle::8",
++                                       "10-23 15:35:00.001 100 101 W synthetic: obstacle::9"])
++        row = self.evidence(report, metric)
++        self.assertEqual(row["counts"]["raw_tag_hits"], 3)
++        self.assertEqual(row["counts"]["in_window_tag_hits"], 1)
++        self.assertEqual(row["counts"]["configured_numeric_values"], 1)
++
++    def test_no_matching_tag_and_invalid_time_are_separate(self):
++        metric = "prediction_obs"
++        no_tag = self.evidence(self.report(metric, ["10-23 15:10:00.000 100 101 W unrelated"]), metric)
++        self.assertEqual(no_tag["reason"], "no_tag_matches_in_selected_inputs")
++        invalid = self.evidence(self.report(metric, ["typedef obstacle::Thing"]), metric)
++        self.assertEqual(invalid["status"], "unresolved")
++        self.assertEqual(invalid["reason"], "unrecognized_untimed_input_layout_unresolved")
++        self.assertEqual(invalid["counts"]["invalid_timestamp_tag_hits"], 1)
++
++    def test_untimed_idl_definition_is_identified_without_inventing_time(self):
++        metric = "prediction_obs"
++        report = self.report(metric, ["struct dds_parking_obstacle::Obstacle {",
++                                       "\tsequence<dds_parking_obstacle::Obstacle > obstacles;"])
++        row = self.evidence(report, metric)
++        self.assertEqual(row["status"], "explained")
++        self.assertEqual(row["counts"]["in_window_tag_hits"], 0)
++        self.assertEqual(row["counts"]["invalid_timestamp_tag_hits"], 2)
++        self.assertEqual(row["untimed_shapes"], {"dds_idl_definition_without_measurement_timestamp": 2})
++
++    def test_unrecognized_full_year_timestamp_remains_unresolved(self):
++        metric = "prediction_obs"
++        report = self.report(metric, ["2026-10-23 15:10:00.000 100 101 W synthetic: obstacle::7"])
++        row = self.evidence(report, metric)
++        self.assertEqual(row["status"], "unresolved")
++        self.assertEqual(row["reason"], "unrecognized_untimed_input_layout_unresolved")
++        self.assertEqual(row["counts"]["invalid_timestamp_tag_hits"], 1)
++
++    def test_unknown_untimed_line_cannot_hide_behind_known_in_window_shape(self):
++        metric = "prediction_obs"
++        report = self.report(metric, [
++            "10-23 15:10:00.001 100 101 W VBSLOG_DRTRACEPOINT_MANAGER: Info [1] Reg topic idl, type: dds_parking_obstacle::Obstacles, define: struct Type {",
++            "new unknown prefix obstacle::7",
++        ])
++        row = self.evidence(report, metric)
++        self.assertEqual(row["status"], "unresolved")
++        self.assertEqual(row["counts"]["in_window_tag_hits"], 1)
++        self.assertEqual(row["counts"]["invalid_timestamp_tag_hits"], 1)
++
++    def test_attach_preserves_all_preexisting_values_and_no_raw_lines(self):
++        metric = "prediction_obs"
++        report = self.report(metric, ["10-23 15:10:00.000 100 101 W synthetic: obstacle::7"])
++        original = copy.deepcopy(report)
++        attached = attach_metric_input_diagnostics(report)
++        self.assertEqual(report, original)
++        evidence = attached.pop("metric_input_diagnostics")
++        self.assertFalse(evidence["statistical_values_or_rules_modified"])
++        self.assertFalse(evidence["counts_are_native_final_samples"])
++        self.assertNotIn("text", json.dumps(evidence))
++        attached["statistics"][0].pop("input_diagnostic")
++        self.assertEqual(attached, original)
++
++    def test_available_metric_is_never_reclassified(self):
++        metric = "prediction_obs"
++        report = self.report(metric, [], status="available")
++        evidence = build_metric_input_diagnostics(report)
++        self.assertEqual(evidence["supported_missing_rules_checked"], 0)
++        self.assertEqual(evidence["metrics"], {})
++
++    def test_invalid_utf8_target_line_is_unresolved_and_original_values_survive(self):
++        metric = "prediction_obs"
++        report = self.report(metric, [])
++        raw = b"10-23 15:10:00.000 100 101 W synthetic: obstacle::7\xff\n"
++        self.replace_raw(report, raw)
++        original = copy.deepcopy(report)
++        output = attach_metric_input_diagnostics(report)
++        row = output["metric_input_diagnostics"]["metrics"][metric]
++        self.assertEqual(row["status"], "unresolved")
++        self.assertEqual(row["reason"], "invalid_encoding_in_target_lines_unresolved")
++        self.assertEqual(row["counts"]["invalid_encoding_tag_hits"], 1)
++        self.assertFalse(row["scan_complete"])
++        self.assertEqual(row["counts"]["configured_numeric_values"], 0)
++        self.assertEqual(row["sample_line_sha256"]["invalid_encoding"]["sha256"], hashlib.sha256(raw.rstrip(b"\n")).hexdigest())
++        output.pop("metric_input_diagnostics")
++        output["statistics"][0].pop("input_diagnostic")
++        self.assertEqual(output, original)
++        self.assertEqual(report, original)
++
++    def test_known_valid_shape_cannot_hide_invalid_utf8_target_line(self):
++        metric = "prediction_obs"
++        report = self.report(metric, [])
++        good = b"10-23 15:10:00.001 100 101 W VBSLOG_DRTRACEPOINT_MANAGER: Info [1] Reg topic idl, type: dds_parking_obstacle::Obstacles, define: struct Type {\n"
++        bad = b"10-23 15:10:00.002 100 101 W synthetic: obstacle::unknown\xff\n"
++        self.replace_raw(report, good + bad)
++        row = self.evidence(report, metric)
++        self.assertEqual(row["status"], "unresolved")
++        self.assertEqual(row["reason"], "invalid_encoding_in_target_lines_unresolved")
++        self.assertEqual(row["counts"]["raw_tag_hits"], 2)
++        self.assertEqual(row["counts"]["in_window_tag_hits"], 1)
++        self.assertEqual(row["counts"]["invalid_encoding_tag_hits"], 1)
++        self.assertEqual(row["shapes_in_window"], {"dds_type_registration_not_obstacle_count": 1})
++
++    def test_permission_error_is_incomplete_diagnostic_not_lost_statistics(self):
++        metric = "prediction_obs"
++        report = self.report(metric, ["10-23 15:10:00.000 100 101 W synthetic: obstacle::7"])
++        original = copy.deepcopy(report)
++        with patch.object(Path, "read_bytes", side_effect=PermissionError(13, "synthetic denied")):
++            output = attach_metric_input_diagnostics(report)
++        row = output["metric_input_diagnostics"]["metrics"][metric]
++        self.assertFalse(row["scan_complete"])
++        self.assertEqual(row["status"], "unresolved")
++        self.assertEqual(row["reason"], "selected_input_unavailable_unresolved")
++        output.pop("metric_input_diagnostics")
++        output["statistics"][0].pop("input_diagnostic")
++        self.assertEqual(output, original)
++
++    def test_missing_member_is_incomplete_diagnostic_not_no_samples(self):
++        metric = "prediction_obs"
++        report = self.report(metric, [])
++        path = self.root / "log" / "FSDA_M100_ULTRA" / "synthetic.log"
++        path.unlink()
++        row = self.evidence(report, metric)
++        self.assertEqual(row["status"], "unresolved")
++        self.assertFalse(row["scan_complete"])
++        self.assertEqual(row["reason"], "selected_input_unavailable_unresolved")
++
++    def test_non_regular_member_remains_hard_error(self):
++        metric = "prediction_obs"
++        report = self.report(metric, [])
++        path = self.root / "log" / "FSDA_M100_ULTRA" / "synthetic.log"
++        path.unlink()
++        path.mkdir()
++        with self.assertRaises(MetricDiagnosticsError):
++            build_metric_input_diagnostics(report)
++
++    def test_member_tampering_rejected(self):
++        metric = "prediction_obs"
++        report = self.report(metric, ["10-23 15:10:00.000 100 101 W synthetic: obstacle::7"])
++        path = self.root / "log" / "FSDA_M100_ULTRA" / "synthetic.log"
++        path.write_text("changed", encoding="utf-8")
++        with self.assertRaises(MetricDiagnosticsError):
++            build_metric_input_diagnostics(report)
++
++    def test_path_escape_rejected(self):
++        metric = "prediction_obs"
++        report = self.report(metric, [])
++        report["runtime_execution"]["extractions"][0]["actual_paths"]["synthetic.log"] = "log/../../outside.log"
++        with self.assertRaises(MetricDiagnosticsError):
++            build_metric_input_diagnostics(report)
++
++    def test_runtime_window_mismatch_rejected(self):
++        metric = "prediction_obs"
++        report = self.report(metric, [])
++        report["runtime_execution"]["expected_epoch_range"][0] += 1
++        with self.assertRaises(MetricDiagnosticsError):
++            build_metric_input_diagnostics(report)
++
++
++if __name__ == "__main__":
++    unittest.main()
+--- /dev/null
++++ b/scripts/test_report_units.py
+@@ -0,0 +1,77 @@
++"""Report contract: readable units without conversion or role/value drift."""
++from __future__ import annotations
++
++from copy import deepcopy
++import unittest
++from xml.etree import ElementTree as ET
++
++from feishu_report import build_report_document
++from performance_comparison import compare_pair
++from report_attachments import artifact_filename
++from request_model import InputError
++
++
++class ReportUnitTests(unittest.TestCase):
++    def test_attachment_description_uses_the_published_card_filename(self):
++        result = {'full_workbooks':{role:{'path':'unused-'+role+'.xlsx',
++            'request_sha256':('a' if role == 'baseline' else 'b')*64,
++            'sha256':('c' if role == 'baseline' else 'd')*64}
++            for role in ('baseline','replacement')}}
++        xml = build_report_document(result)['xml']
++        root = ET.fromstring('<report>'+xml+'</report>')
++        visible = ''.join(root.itertext())
++        self.assertIn('完整明细附件：Base_aaaaaaaaaaaa_cccccccccccc.xlsx；SHA256：'+'c'*64,visible)
++        self.assertIn('完整明细附件：PCM_update_bbbbbbbbbbbb_dddddddddddd.xlsx；SHA256：'+'d'*64,visible)
++        self.assertNotIn('unused-',visible)
++
++    def test_attachment_name_requires_known_role_and_verified_fingerprints(self):
++        for role,request_sha,file_sha in (
++            ('unknown','a'*64,'b'*64),('baseline',None,'b'*64),
++            ('baseline','a'*64,'not-a-hash'),('replacement','A'*64,'b'*64)):
++            with self.subTest(role=role,request_sha=request_sha,file_sha=file_sha):
++                with self.assertRaises(InputError):
++                    artifact_filename(role,request_sha,file_sha)
++
++    def test_units_and_percentage_points_preserve_the_report_values(self):
++        keys = (
++            "p99_infer_delay_ms", "frame_rate_hz", "system_cpu_percent",
++            "pcm_p99_infer_delay_ms", "pcm_frame_rate_hz", "pcm_cpu_percent",
++        )
++        pairs = (
++            compare_pair(120, 100, direction="lower"),
++            compare_pair(5, 6, direction="higher"),
++            compare_pair(60, 55, direction="lower"),
++            compare_pair(20, 23, direction="lower"),
++            compare_pair(None, 4, direction="higher"),
++            compare_pair(3, None, direction="lower"),
++        )
++        result = {"comparisons": {"slow_driver": {
++            "label": "低速人驾", "metrics": dict(zip(keys, pairs))}}}
++        original = deepcopy(result)
++        xml = build_report_document(result)["xml"]
++        root = ET.fromstring("<report>" + xml + "</report>")
++        headers = root.findall("./table/thead/tr")[0].findall("th")
++        self.assertEqual(["".join(cell.itertext()) for cell in headers], [
++            "车辆模式", "AD P99 Infer Delay (ms)", "AD Frame Rate (Hz)",
++            "Sys CPU Usage (%)", "PCM P99 Infer Delay (ms)",
++            "PCM Frame Rate (Hz)", "PCM CPU Usage (%)",
++        ])
++        role_headers = root.findall("./table/thead/tr")[1].findall("th")
++        self.assertEqual(["".join(cell.itertext()) for cell in role_headers],
++                         ["base", "PCM更新"] * 6)
++        rows = root.findall("./table/tbody/tr")
++        self.assertEqual(len(rows), 4)
++        self.assertTrue(all(len(row.findall("td")) == 13 for row in rows))
++        cells = rows[0].findall("td")
++        self.assertEqual(["".join(cell.itertext()) for cell in cells[1:]], [
++            "120", "100 (-20)", "5", "6 (+1)", "60", "55 (-5)",
++            "20", "23 (+3)", "-", "4", "3", "-",
++        ])
++        self.assertEqual([span.attrib["text-color"] for span in rows[0].findall(".//span")],
++                         ["green", "green", "green", "red"])
++        self.assertIn("CPU 占用单位为 %、差值单位为百分点", xml)
++        self.assertEqual(result, original)
++
++
++if __name__ == "__main__":
++    unittest.main()
+--- a/scripts/test_source_selection_fixture.py
++++ b/scripts/test_source_selection_fixture.py
+@@ -50,7 +50,12 @@
+     """Explicit mock of an external-process boundary, never a real replay proof."""
+     from test_analyzer_contract import synthetic_contract_audit
+     from test_runtime_audit import synthetic_runtime_execution
++    from native_execution_compat import expected_execution_compat_audit
++    from test_native_execution_compat import synthetic_runtime_audit
+     report['analyzer_contract']=synthetic_contract_audit()
++    report['execution_compat']=expected_execution_compat_audit()
++    report['execution_compat_runtime']=synthetic_runtime_audit(
++        report['metadata']['time_range'],report['analyzer_contract']['contract_fingerprint'])
+     report['runtime_execution']=synthetic_runtime_execution(
+         inventory=report['source_selection']['input_inventory'],
+         request_time_range=report['metadata']['time_range'],rules=rules)
