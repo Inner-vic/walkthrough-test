@@ -3,11 +3,11 @@
   "source_file_count": 155,
   "files": {
     "analyzer-execution-fix.patch": "458f77ab1ea6125bed9c4aea8bfab3b59dc1439948f56020271907d8d733297d",
-    "ANALYZER-FIX.md": "79596b2c074fdc5e1edbb465022de5f99439da4ca6c5adeea1056881ac31fec2",
+    "ANALYZER-FIX.md": "d9d3c251ad76b2fa277b85a717f536f18dd1b92abc284248178777be8620a8c7",
     "assets/report-table.xml": "1a0ec9b71cb7b4141aa41edb318d39641751afadc092d501fda221b9ba412ab3",
-    "references/asgard-query-deployment.md": "5ffd7e5f81f5d1f7998f849a82439d29634d60ad9df8ad7c969f35f4dc82f64a",
+    "references/asgard-query-deployment.md": "3f1d58769630b57445ab570a3edc3930a6f805dfec0d973ae735ce167fd540e5",
     "references/download-recovery.md": "4be97648ffcda3c8d20fa99715a409c0d4ca7c18ef34c48cdacf6c5d886dadf9",
-    "references/native-analysis-contract.md": "f42b793f003541419fbe53017eee6b3258cc38f72f9fc7a92fbf72da6f8c5451",
+    "references/native-analysis-contract.md": "9ceba24c1eb92c17509087e3e46cc3c108029a84eac8dd478588957b7b42a86d",
     "references/native-lifecycle.md": "904e0f5fd5001cceff00bc082badaf7c1dab567595542c3402813c12633fcfb5",
     "references/native-performance.md": "a5f5c2e93d0670a1f19f12dffa9f286d641229f5c2491387df98b9bfaf931609",
     "references/native-sheets-delivery.md": "5a6a1b7ce71086cc26f3a088683f627b009a56e244b37f88ad1da2d98a19cf8b",
@@ -154,9 +154,9 @@
     "scripts/walkthrough_worker.py": "7ddcb7793b64b55a215b969017e34478b75230308783cf33a49f7d8d96266d6f",
     "scripts/window_pipeline.py": "553bccb9b4068fab9be306d825202469e99a67a5cb2fd3aa7fd8a8f630310f26",
     "scripts/windows_native_tools.py": "f90f2792ae5589f1299d0ac295481fc5ed883dd7f649e5525007bb9bbdb68020",
-    "SKILL.md": "ea180130c79cb8f384e9c99c2ee08328a9d26526238ba30424c27fac2b6c5008",
+    "SKILL.md": "561422a57c43877ffde106d4d969e7029cc0cc7432b4fffbeea691ea3d5fc24a",
     "VERSION": "ba043a02c760de9808c653261ff7744040335bd56b42d5dfe4dc91fe8baab36a",
-    "WINDOWS-NATIVE.md": "725e4c971569d620321edd6ba2593c1df61826fd2072bc23b3312e6d2701478c"
+    "WINDOWS-NATIVE.md": "eceebb848faaf37687b3da1a85f8a2c5d50e83334c5a58ee4a0d4f33d0a8158e"
   },
-  "canonical_source_sha256": "97197373fdedbfd021e7221f067f79fa64b839e6888a3bada8f5196e86292dd6"
+  "canonical_source_sha256": "ee9308e5f528ed473f7a4a13bbe46fb199742970a0d116c71531489826e5862d"
 }

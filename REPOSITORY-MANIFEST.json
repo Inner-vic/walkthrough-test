@@ -7,28 +7,24 @@
       "bytes": 86
     },
     ".github/workflows/source-checks.yml": {
-      "sha256": "b480ae72806215e7e4cb2f766f93e4c74d3c618c67e99b203a8ee559bde0cca9",
-      "bytes": 535
+      "sha256": "8e5b1389b69fe7c66f75154dd5e9bbf3576bd73808cb00a2d36b2baefefee8d0",
+      "bytes": 538
     },
     ".gitignore": {
       "sha256": "cb418326e04aac18b2f93ee7a2273184065331f2497fc435adf15816a47040a0",
       "bytes": 714
     },
-    ".gitlab-ci.yml": {
-      "sha256": "951b7b8d7edb10d7a8d9e275a7c95c4c3e3095b19cbdc6eff219c40b8ba3f2ae",
-      "bytes": 538
-    },
     "CHANGELOG.md": {
-      "sha256": "e4eb97fa83f70c2757fba0eed37fa261d71333cbdeeaf4341f5141562280ff58",
-      "bytes": 1468
+      "sha256": "fca3a7b58610e7a637380fc4ce4af80f3ea880f0d2c10cec3e00de2d570b27e2",
+      "bytes": 1450
     },
     "CONTRIBUTING.md": {
       "sha256": "ad60fc03ae2fc715e5ee2b4092086944514cc9a091fdbbd915c8b1f554a5ec47",
       "bytes": 1416
     },
     "PUBLICATION.md": {
-      "sha256": "c4a8faf43e753d8b5871a5129795afc3fd6b15e789fd7addd2e020fcea98f4b6",
-      "bytes": 1052
+      "sha256": "9a78e5017380daa26e166a7aaf6d4b5275b4c155cd04f0e32e37870749e90810",
+      "bytes": 1026
     },
     "README.md": {
       "sha256": "44bc6312729590414cc1c824b3e84794a61ef670387b2456418bfbfa6d94cc90",
@@ -59,24 +55,24 @@
       "bytes": 3380
     },
     "docs/dependencies.md": {
-      "sha256": "7bcc1f9b33895d8b1a764b4592c8021bb9cca21353b45719d50f00d137d874d8",
-      "bytes": 2125
+      "sha256": "86e65b114b21b364ce8d108dd22875969819877c621b9d1fe60b21d8d83e9f8d",
+      "bytes": 2107
     },
     "docs/deployment.md": {
-      "sha256": "68c2e1a2965666b1a6f0dd8df091d9e2edf498b3f6ea4cf1bb616565c6ee81a7",
-      "bytes": 4050
+      "sha256": "134024b875d3a2048333520e253694b482f7b4e5497589ddeb0a19bc75b23641",
+      "bytes": 4005
     },
     "docs/lark-asgard-integration.md": {
-      "sha256": "91aceaec4985843851be8138ee7c2c29a1c4cf53ff662006310cfde4576d4133",
-      "bytes": 8214
+      "sha256": "349f43d7dad466c130c68585cc2fe0cc93e9c4d5ea8170745645570beeb8a8d1",
+      "bytes": 8149
     },
     "docs/operations.md": {
       "sha256": "44158eb045857f3e9e84cee6de5af3dcbef7e45bfd5536eae11685d175f07224",
       "bytes": 2915
     },
     "docs/project-guide.md": {
-      "sha256": "125bb85c98f44293b69b094162fc7fd867383969fc30e7a44f9d17fdf8dd042f",
-      "bytes": 4308
+      "sha256": "2250f492bfe4e29b383335d5cae897285628f78b903aed1dafb845101d073913",
+      "bytes": 7324
     },
     "docs/validation-results.json": {
       "sha256": "c3015d29e41633627957eaec3b862599d68ef5da903a15c83dfa6d7588c46c3f",
@@ -199,24 +195,24 @@
       "bytes": 11450
     },
     "workspace/.agents/skills/walkthrough-test/SKILL.md": {
-      "sha256": "4b9a060cfeaece46ae556d3733013458816a932955333e69947f140864f4aa3f",
-      "bytes": 10940
+      "sha256": "c040e93242dfe9ac4ae16883a7b5ffa12572cadc10412d36bc931a0aeae3e9f2",
+      "bytes": 10888
     },
     "workspace/.agents/skills/walkthrough-test/WINDOWS-NATIVE.md": {
-      "sha256": "725e4c971569d620321edd6ba2593c1df61826fd2072bc23b3312e6d2701478c",
-      "bytes": 408
+      "sha256": "eceebb848faaf37687b3da1a85f8a2c5d50e83334c5a58ee4a0d4f33d0a8158e",
+      "bytes": 403
     },
     "workspace/.agents/skills/walkthrough-test/references/asgard-query-deployment.md": {
-      "sha256": "5ffd7e5f81f5d1f7998f849a82439d29634d60ad9df8ad7c969f35f4dc82f64a",
-      "bytes": 15911
+      "sha256": "3f1d58769630b57445ab570a3edc3930a6f805dfec0d973ae735ce167fd540e5",
+      "bytes": 15753
     },
     "workspace/.agents/skills/walkthrough-test/references/download-recovery.md": {
       "sha256": "4be97648ffcda3c8d20fa99715a409c0d4ca7c18ef34c48cdacf6c5d886dadf9",
       "bytes": 2309
     },
     "workspace/.agents/skills/walkthrough-test/references/native-analysis-contract.md": {
-      "sha256": "f42b793f003541419fbe53017eee6b3258cc38f72f9fc7a92fbf72da6f8c5451",
-      "bytes": 4505
+      "sha256": "9ceba24c1eb92c17509087e3e46cc3c108029a84eac8dd478588957b7b42a86d",
+      "bytes": 4474
     },
     "workspace/.agents/skills/walkthrough-test/references/native-lifecycle.md": {
       "sha256": "904e0f5fd5001cceff00bc082badaf7c1dab567595542c3402813c12633fcfb5",
@@ -347,7 +343,7 @@
       "bytes": 5712
     },
     "workspace/runtime/wtr096-hardening/SOURCE-MANIFEST.json": {
-      "sha256": "1fe568c1fda5f97140c45602eb19156f8fce3c27244105870f90337190513014",
+      "sha256": "2bacc8fef76262cd529f9af10504f8ff7e36857e66edd8d6de491a24888a2002",
       "bytes": 17174
     },
     "workspace/runtime/wtr096-hardening/deployment/walkthrough_entry.py": {
@@ -359,20 +355,20 @@
       "bytes": 13714
     },
     "workspace/runtime/wtr096-hardening/skill/ANALYZER-FIX.md": {
-      "sha256": "79596b2c074fdc5e1edbb465022de5f99439da4ca6c5adeea1056881ac31fec2",
-      "bytes": 7278
+      "sha256": "d9d3c251ad76b2fa277b85a717f536f18dd1b92abc284248178777be8620a8c7",
+      "bytes": 7225
     },
     "workspace/runtime/wtr096-hardening/skill/SKILL.md": {
-      "sha256": "ea180130c79cb8f384e9c99c2ee08328a9d26526238ba30424c27fac2b6c5008",
-      "bytes": 10982
+      "sha256": "561422a57c43877ffde106d4d969e7029cc0cc7432b4fffbeea691ea3d5fc24a",
+      "bytes": 10930
     },
     "workspace/runtime/wtr096-hardening/skill/VERSION": {
       "sha256": "ba043a02c760de9808c653261ff7744040335bd56b42d5dfe4dc91fe8baab36a",
       "bytes": 37
     },
     "workspace/runtime/wtr096-hardening/skill/WINDOWS-NATIVE.md": {
-      "sha256": "725e4c971569d620321edd6ba2593c1df61826fd2072bc23b3312e6d2701478c",
-      "bytes": 408
+      "sha256": "eceebb848faaf37687b3da1a85f8a2c5d50e83334c5a58ee4a0d4f33d0a8158e",
+      "bytes": 403
     },
     "workspace/runtime/wtr096-hardening/skill/analyzer-execution-fix.patch": {
       "sha256": "458f77ab1ea6125bed9c4aea8bfab3b59dc1439948f56020271907d8d733297d",
@@ -383,16 +379,16 @@
       "bytes": 6064
     },
     "workspace/runtime/wtr096-hardening/skill/references/asgard-query-deployment.md": {
-      "sha256": "5ffd7e5f81f5d1f7998f849a82439d29634d60ad9df8ad7c969f35f4dc82f64a",
-      "bytes": 15911
+      "sha256": "3f1d58769630b57445ab570a3edc3930a6f805dfec0d973ae735ce167fd540e5",
+      "bytes": 15753
     },
     "workspace/runtime/wtr096-hardening/skill/references/download-recovery.md": {
       "sha256": "4be97648ffcda3c8d20fa99715a409c0d4ca7c18ef34c48cdacf6c5d886dadf9",
       "bytes": 2309
     },
     "workspace/runtime/wtr096-hardening/skill/references/native-analysis-contract.md": {
-      "sha256": "f42b793f003541419fbe53017eee6b3258cc38f72f9fc7a92fbf72da6f8c5451",
-      "bytes": 4505
+      "sha256": "9ceba24c1eb92c17509087e3e46cc3c108029a84eac8dd478588957b7b42a86d",
+      "bytes": 4474
     },
     "workspace/runtime/wtr096-hardening/skill/references/native-lifecycle.md": {
       "sha256": "904e0f5fd5001cceff00bc082badaf7c1dab567595542c3402813c12633fcfb5",
